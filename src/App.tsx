@@ -85,6 +85,7 @@ export default function App() {
         } else if (event.data.type === 'result') {
           worker.removeEventListener('message', handleMessage)
           worker.terminate() // Clean up the worker
+          console.log('Worker result received:', event.data.summary)
           resolve(event.data.summary)
         } else if (event.data.type === 'error') {
           worker.removeEventListener('message', handleMessage)
@@ -114,6 +115,7 @@ export default function App() {
         const detected = deriveUsernameFromGames(uploadedGames)
         setSelectedUsername(detected ?? null)
         const result = await analyzeWithWorker(uploadedGames, { onlyForUsername: detected })
+        console.log('Analysis completed, setting summary:', result)
         setSummary(result)
       } else {
         const abort = new AbortController()
@@ -159,6 +161,7 @@ export default function App() {
             // Show immediate feedback
             setIsAnalyzing(true)
             const result = await analyzeWithWorker(uploaded, { onlyForUsername: detected })
+            console.log('Analysis completed, setting summary:', result)
             setSummary(result)
           })
           .catch(() => {})
@@ -176,7 +179,12 @@ export default function App() {
   // Auto-scroll debug logs to bottom
   useEffect(() => {
     if (debugScrollRef.current) {
-      debugScrollRef.current.scrollTop = debugScrollRef.current.scrollHeight
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (debugScrollRef.current) {
+          debugScrollRef.current.scrollTop = debugScrollRef.current.scrollHeight
+        }
+      })
     }
   }, [debugLogs.length])
 
@@ -243,7 +251,19 @@ export default function App() {
         )}
         {debugLogs.length > 0 && (
           <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg z-50 max-w-md max-h-96 overflow-hidden">
-            <div className="text-sm font-semibold text-gray-200 mb-2">Debug Logs ({debugLogs.length})</div>
+            <div className="flex justify-between items-center mb-2">
+              <div className="text-sm font-semibold text-gray-200">Debug Logs ({debugLogs.length})</div>
+              <button 
+                onClick={() => {
+                  if (debugScrollRef.current) {
+                    debugScrollRef.current.scrollTop = debugScrollRef.current.scrollHeight
+                  }
+                }}
+                className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-gray-300"
+              >
+                Scroll to Bottom
+              </button>
+            </div>
             <div ref={debugScrollRef} className="space-y-1 text-xs overflow-y-auto max-h-80" style={{ scrollbarWidth: 'thin' }}>
               {debugLogs.map((log, index) => (
                 <div key={index} className="text-gray-300 border-b border-slate-700 pb-1">
