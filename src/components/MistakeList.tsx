@@ -22,6 +22,39 @@ export default function MistakeList({
   onSelect: (fen: string, meta: MistakeItemMeta) => void
   selected?: MistakeItemMeta | null
 }) {
+  // Precompute per-game move list and FENs after each ply for fast lookup
+  const gameIndex = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        verbose: Array<{ san: string; from: string; to: string; promotion?: string }>
+        fensAfterPly: string[]
+      }
+    >()
+    const extractHeader = (tag: string, text?: string): string | undefined => {
+      if (!text) return undefined
+      const m = new RegExp(`\\[${tag}\\s+"([^"]+)"\\]`).exec(text)
+      return m?.[1]
+    }
+    for (const g of games as any[]) {
+      const id = String(g?.id ?? '')
+      if (!id) continue
+      const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
+      const initialFen: string | undefined = g?.initialFen || extractHeader('FEN', pgnRaw)
+      const tmp = new Chess(initialFen)
+      if (pgnRaw) tmp.loadPgn(pgnRaw)
+      const verbose = tmp.history({ verbose: true }) as Array<{ san: string; from: string; to: string; promotion?: string }>
+      // Build FEN after each ply in one forward pass
+      const engine = new Chess(initialFen)
+      const fensAfterPly: string[] = []
+      for (const mv of verbose) {
+        engine.move({ from: mv.from, to: mv.to, promotion: mv.promotion })
+        fensAfterPly.push(engine.fen())
+      }
+      map.set(id, { verbose, fensAfterPly })
+    }
+    return map
+  }, [games])
   const [sortMode, setSortMode] = useState<'recurrence' | 'move'>('recurrence')
   const [page, setPage] = useState(1)
   const pageSize = 20
@@ -37,15 +70,12 @@ export default function MistakeList({
     const openingCounts: Record<string, Record<string, number>> = {}
     const samples: Record<string, { gameId: string; moveNumber: number }> = {}
 
-    const fenCache = new Map<string, string>()
     const getFenFor = (game: any, moveNumber: number): string => {
       const gid = String(game?.id ?? '')
-      const key = `${gid}#${moveNumber}`
-      const cached = fenCache.get(key)
-      if (cached) return cached
-      const fen = computeFenAtMove(game, moveNumber)
-      fenCache.set(key, fen)
-      return fen
+      const data = gameIndex.get(gid)
+      const targetPly = Math.max(1, moveNumber * 2 - 1)
+      const fen = data?.fensAfterPly?.[targetPly - 1]
+      return fen || new Chess().fen()
     }
 
     for (const g of games as any[]) {
@@ -88,23 +118,11 @@ export default function MistakeList({
       const id = String((g as any)?.id ?? '')
       if (id) map[id] = g
     }
-    // Cache parsed verbose moves per game for SAN lookups
-    const gameVerboseMoves = new Map<string, Array<{ san: string; from: string; to: string; promotion?: string }>>()
-    const getVerboseMoves = (game: any) => {
-      const gid = String(game?.id ?? '')
-      const cached = gameVerboseMoves.get(gid)
-      if (cached) return cached
-      const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
-      const engine = new Chess()
-      if (pgnRaw) engine.loadPgn(pgnRaw)
-      const verbose = engine.history({ verbose: true }) as Array<{ san: string; from: string; to: string; promotion?: string }>
-      gameVerboseMoves.set(gid, verbose)
-      return verbose
-    }
-
     const computePlayedSan = (game: any, moveNumber: number): string | undefined => {
       try {
-        const verbose = getVerboseMoves(game)
+        const gid = String(game?.id ?? '')
+        const data = gameIndex.get(gid)
+        const verbose = data?.verbose ?? []
         const plyIndex = Math.max(0, Math.min(verbose.length - 1, moveNumber * 2 - 2))
         return verbose[plyIndex]?.san
       } catch {
@@ -185,7 +203,12 @@ export default function MistakeList({
       .filter((b) => b.gameId && map[b.gameId])
       .map((b) => {
         const game: any = map[b.gameId]
-        const fen = computeFenAtMove(game, b.moveNumber)
+        const fen = (() => {
+          const gid = String(game?.id ?? '')
+          const data = gameIndex.get(gid)
+          const targetPly = Math.max(1, b.moveNumber * 2 - 1)
+          return data?.fensAfterPly?.[targetPly - 1] || new Chess().fen()
+        })()
         const sig = positionSignature(fen)
         const frequency = signatureCounts[sig] ?? 1
         const playedSan = computePlayedSan(game, b.moveNumber)
@@ -204,54 +227,8 @@ export default function MistakeList({
     return items.slice(start, start + pageSize)
   }, [items, page])
 
-  function computeFenAtMove(game: any, moveNumber: number): string {
-    try {
-      // Prefer PGN if available
-      const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
-      if (pgnRaw) {
-        // Build move list from PGN, then play up to target ply
-        const tmp = new Chess()
-        tmp.loadPgn(pgnRaw)
-        const verboseMoves = tmp.history({ verbose: true }) as Array<{
-          from: string
-          to: string
-          promotion?: string
-        }>
-        const targetPly = Math.max(0, Math.min(verboseMoves.length, moveNumber * 2 - 1))
-        const engine = new Chess()
-        for (let i = 0; i < targetPly; i += 1) {
-          const m = verboseMoves[i]
-          if (!m) break
-          engine.move({ from: m.from, to: m.to, promotion: m.promotion })
-        }
-        return engine.fen()
-      }
-
-      // Fallback: use moves SAN string if provided by API
-      const movesStr: string | undefined = game?.moves
-      if (typeof movesStr === 'string' && movesStr.trim()) {
-        const initialFen: string | undefined = game?.initialFen
-        const engine = new Chess(initialFen)
-        const sanTokens = movesStr.trim().split(/\s+/)
-        const targetPly = Math.max(0, Math.min(sanTokens.length, moveNumber * 2 - 1))
-        let plyCount = 0
-        for (const tok of sanTokens) {
-          if (/^\d+\.|^\d+\.\.\./.test(tok)) continue
-          if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok)) break
-          try {
-            engine.move(tok)
-          } catch {
-            break
-          }
-          plyCount += 1
-          if (plyCount >= targetPly) break
-        }
-        return engine.fen()
-      }
-    } catch (_) {
-      // noop
-    }
-    // Ultimate fallback: starting position
+  function computeFenAtMove(_game: any, _moveNumber: number): string {
+    // Replaced by gameIndex-based fast path above
     return new Chess().fen()
   }
 
