@@ -24,20 +24,32 @@ if (!isMainThread && parentPort) {
         const targetUsername = options.onlyForUsername || deriveUsernameFromGames(games)
         
         // Perform analysis
-        const summary = analyzeGames(games, { 
-          onlyForUsername: targetUsername 
-        })
+        const analysisOptions: { onlyForUsername?: string } = {}
+        if (targetUsername) {
+          analysisOptions.onlyForUsername = targetUsername
+        }
+        const summary = analyzeGames(games, analysisOptions)
         
         const processingTime = Date.now() - startTime
         
+        const resultData: {
+          summary: AnalysisSummary
+          processingTime: number
+          gameCount: number
+          detectedUsername?: string
+        } = {
+          summary,
+          processingTime,
+          gameCount: games.length
+        }
+        
+        if (targetUsername) {
+          resultData.detectedUsername = targetUsername
+        }
+        
         parentPort!.postMessage({
           type: 'result',
-          data: {
-            summary,
-            processingTime,
-            gameCount: games.length,
-            detectedUsername: targetUsername
-          }
+          data: resultData
         })
       } catch (error) {
         parentPort!.postMessage({
@@ -161,12 +173,22 @@ export async function analyzeGamesParallel(
 
     const processingTime = Date.now() - startTime
     
-    return {
+    const result: {
+      summary: AnalysisSummary
+      processingTime: number
+      gameCount: number
+      detectedUsername?: string
+    } = {
       summary: mergedSummary,
       processingTime,
-      gameCount: games.length,
-      detectedUsername: results[0]?.detectedUsername
+      gameCount: games.length
     }
+    
+    if (results[0]?.detectedUsername) {
+      result.detectedUsername = results[0].detectedUsername
+    }
+    
+    return result
   } finally {
     // Clean up workers
     workers.forEach(worker => {

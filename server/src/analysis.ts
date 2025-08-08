@@ -22,7 +22,11 @@ export function extractGameNames(game: any): { white?: string; black?: string } 
       (game?.black?.user?.name as string | undefined) ||
       (game?.black?.name as string | undefined) ||
       fromPgn(pgnRaw, 'Black'))
-  return { white, black }
+  
+  const result: { white?: string; black?: string } = {}
+  if (white) result.white = white
+  if (black) result.black = black
+  return result
 }
 
 export function deriveUsernameFromGames(all: LichessGame[]): string | undefined {
@@ -120,7 +124,7 @@ export function analyzeGames(
           moveNumber,
           ply: plyValue,
           side: plyValue % 2 === 1 ? 'white' : 'black',
-          centipawnLoss,
+          ...(centipawnLoss !== undefined && { centipawnLoss })
         })
       }
     })
@@ -134,6 +138,8 @@ export function analyzeGames(
       for (let i = 1; i < evals.length; i++) {
         const prev = evals[i - 1]
         const curr = evals[i]
+        if (!prev || !curr) continue
+        
         const delta = typeof prev.cp === 'number' && typeof curr.cp === 'number' ? Math.abs(curr.cp - prev.cp) : 0
         const plyValue: number = typeof analyzedMoves[i]?.ply === 'number' ? analyzedMoves[i].ply : i + 1
         const moveNumber = Math.ceil(plyValue / 2)
@@ -150,7 +156,7 @@ export function analyzeGames(
             moveNumber,
             ply: plyValue,
             side: plyValue % 2 === 1 ? 'white' : 'black',
-            centipawnLoss: delta,
+            ...(delta > 0 && { centipawnLoss: delta })
           })
         } else if (delta >= 150) {
           summary.total.mistakes += 1

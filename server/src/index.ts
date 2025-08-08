@@ -21,7 +21,7 @@ app.use(express.json({ limit: '50mb' }))
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
+  return res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
@@ -55,14 +55,14 @@ app.post('/api/analyze', async (req, res) => {
     console.log(`Analysis completed in ${result.processingTime}ms`)
     console.log(`Found ${result.summary.total.blunders} blunders, ${result.summary.total.mistakes} mistakes, ${result.summary.total.inaccuracies} inaccuracies`)
     
-    res.json({
+    return res.json({
       success: true,
       ...result
     })
     
   } catch (error) {
     console.error('Analysis error:', error)
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Analysis failed', 
       details: error instanceof Error ? error.message : 'Unknown error'
     })
@@ -72,7 +72,7 @@ app.post('/api/analyze', async (req, res) => {
 // Get server info
 app.get('/api/info', (req, res) => {
   const os = require('os')
-  res.json({
+  return res.json({
     platform: os.platform(),
     arch: os.arch(),
     cpus: os.cpus().length,
@@ -89,7 +89,7 @@ app.get('/api/info', (req, res) => {
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled error:', err)
-  res.status(500).json({ 
+  return res.status(500).json({ 
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   })
@@ -97,7 +97,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' })
+  return res.status(404).json({ error: 'Endpoint not found' })
 })
 
 app.listen(PORT, () => {
