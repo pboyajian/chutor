@@ -21,7 +21,15 @@ const COLORS = ['#60a5fa', '#22d3ee', '#a78bfa']
 
 type ChartView = 'pie' | 'bar'
 
-export default function Dashboard({ summary, games = [] }: { summary: AnalysisSummary; games?: LichessGame[] }) {
+export default function Dashboard({
+  summary,
+  games = [],
+  filterUsername,
+}: {
+  summary: AnalysisSummary
+  games?: LichessGame[]
+  filterUsername?: string
+}) {
   const [view, setView] = useState<ChartView>('pie')
   const [selectedFen, setSelectedFen] = useState<string>(
     'rn1qkbnr/pp3ppp/2p5/3pp3/8/1P2PN2/PBPP1PPP/RN1QKB1R w KQkq - 0 5',
@@ -49,7 +57,10 @@ export default function Dashboard({ summary, games = [] }: { summary: AnalysisSu
     return (games as any[]).filter((g) => String(g?.opening?.name ?? 'Unknown') === selectedOpening)
   }, [games, selectedOpening])
 
-  const activeSummary = useMemo(() => analyzeGames(filteredGames), [filteredGames])
+  const activeSummary = useMemo(
+    () => analyzeGames(filteredGames, { onlyForUsername: filterUsername }),
+    [filteredGames, filterUsername],
+  )
 
   const pieData = [
     { name: 'Blunders', value: activeSummary.total.blunders },

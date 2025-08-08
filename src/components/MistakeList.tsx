@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import type { AnalysisSummary } from '../lib/analysis'
 import type { LichessGame } from '../lib/lichess'
 import { Chess } from 'chess.js'
@@ -20,6 +20,9 @@ export default function MistakeList({
   onSelect: (fen: string, meta: MistakeItemMeta) => void
   selected?: MistakeItemMeta | null
 }) {
+  const [sortMode, setSortMode] = useState<'recurrence' | 'move'>('recurrence')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
   function positionSignature(fen: string): string {
     const parts = fen.split(' ')
     // Use piece placement + active color. Ignore castling rights, en passant, clocks.
@@ -94,8 +97,16 @@ export default function MistakeList({
         return { ...b, game, frequency }
       }) as Array<MistakeItemMeta & { game: any; frequency: number }>
 
+    if (sortMode === 'move') {
+      return withMeta.sort((a, b) => a.moveNumber - b.moveNumber)
+    }
     return withMeta.sort((a, b) => b.frequency - a.frequency)
-  }, [games, summary.topBlunders, signatureCounts])
+  }, [games, summary.topBlunders, signatureCounts, sortMode])
+
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return items.slice(start, start + pageSize)
+  }, [items, page])
 
   function computeFenAtMove(game: any, moveNumber: number): string {
     try {
@@ -181,10 +192,27 @@ export default function MistakeList({
         </ul>
       )}
 
-      <h3 className="mb-2 text-md font-semibold text-gray-100">Top blunders (sorted by recurrence)</h3>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-md font-semibold text-gray-100">Top blunders</h3>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-300" htmlFor="blunder-sort">Sort:</label>
+          <select
+            id="blunder-sort"
+            className="px-2 py-1 border border-slate-700 rounded text-xs bg-slate-800/60 text-gray-200"
+            value={sortMode}
+            onChange={(e) => {
+              setSortMode(e.target.value as 'recurrence' | 'move')
+              setPage(1)
+            }}
+          >
+            <option value="recurrence">By recurrence</option>
+            <option value="move">By move number (earlier first)</option>
+          </select>
+        </div>
+      </div>
       {items.length === 0 && <p className="text-sm text-gray-400">No blunders identified.</p>}
       <ul role="list" className="divide-y divide-slate-700 text-left">
-        {items.map((item) => {
+        {pagedItems.map((item) => {
           const opening = String((item.game?.opening?.name as string) ?? 'Unknown')
           const isSelected = selected?.gameId === item.gameId && selected?.moveNumber === item.moveNumber
           return (
@@ -212,6 +240,29 @@ export default function MistakeList({
           )
         })}
       </ul>
+      {items.length > pageSize && (
+        <div className="mt-3 flex items-center justify-between">
+          <button
+            type="button"
+            className="px-2 py-1 text-xs rounded border border-slate-700 text-gray-200 disabled:opacity-50"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            Previous
+          </button>
+          <div className="text-xs text-gray-400">
+            Page {page} / {Math.ceil(items.length / pageSize)}
+          </div>
+          <button
+            type="button"
+            className="px-2 py-1 text-xs rounded border border-slate-700 text-gray-200 disabled:opacity-50"
+            onClick={() => setPage((p) => (p * pageSize < items.length ? p + 1 : p))}
+            disabled={page * pageSize >= items.length}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   )
 }

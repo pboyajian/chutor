@@ -11,13 +11,18 @@ export interface AnalysisSummary {
   topBlunders: Array<{ gameId: string; moveNumber: number; centipawnLoss?: number }>
 }
 
-export function analyzeGames(games: LichessGame[]): AnalysisSummary {
+export function analyzeGames(
+  games: LichessGame[],
+  options: { onlyForUsername?: string } = {},
+): AnalysisSummary {
   const summary: AnalysisSummary = {
     total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
     mistakesByOpening: {},
     blundersByOpening: {},
     topBlunders: [],
   }
+
+  const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
 
   for (const game of games) {
     const openingName = String((game as any)?.opening?.name ?? 'Unknown')
@@ -27,11 +32,39 @@ export function analyzeGames(games: LichessGame[]): AnalysisSummary {
 
     const hasJudgments = analyzedMoves.some((mv) => mv?.judgment?.name)
 
+    // Determine which side (white/black) the target username is playing in this game, if provided
+    let targetSide: 'white' | 'black' | null = null
+    if (normalizedTarget) {
+      const whiteName: string | undefined =
+        ((game as any)?.players?.white?.user?.name as string | undefined) ||
+        ((game as any)?.players?.white?.userId as string | undefined) ||
+        ((game as any)?.players?.white?.name as string | undefined) ||
+        ((game as any)?.white?.user?.name as string | undefined) ||
+        ((game as any)?.white?.name as string | undefined) ||
+        ((game as any)?.pgn?.raw && /\[White\s+"([^"]+)"\]/.exec((game as any).pgn.raw)?.[1])
+      const blackName: string | undefined =
+        ((game as any)?.players?.black?.user?.name as string | undefined) ||
+        ((game as any)?.players?.black?.userId as string | undefined) ||
+        ((game as any)?.players?.black?.name as string | undefined) ||
+        ((game as any)?.black?.user?.name as string | undefined) ||
+        ((game as any)?.black?.name as string | undefined) ||
+        ((game as any)?.pgn?.raw && /\[Black\s+"([^"]+)"\]/.exec((game as any).pgn.raw)?.[1])
+      if (typeof whiteName === 'string' && whiteName.trim().toLowerCase() === normalizedTarget) targetSide = 'white'
+      else if (typeof blackName === 'string' && blackName.trim().toLowerCase() === normalizedTarget) targetSide = 'black'
+      else targetSide = null
+    }
+
     analyzedMoves.forEach((mv: any, idx: number) => {
       const judgment = mv?.judgment?.name as string | undefined
       const centipawnLoss = mv?.judgment?.cp as number | undefined
       if (!judgment) return
       const moveNumber = typeof mv?.ply === 'number' ? Math.ceil(mv.ply / 2) : idx + 1
+
+      // If filtering by username, only include moves made by that side
+      if (targetSide) {
+        const isWhiteMove = (mv?.ply ?? idx + 1) % 2 === 1
+        if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) return
+      }
 
       const key = openingName
       const name = judgment.toLowerCase()
@@ -64,6 +97,10 @@ export function analyzeGames(games: LichessGame[]): AnalysisSummary {
         const curr = evals[i]
         const delta = typeof prev.cp === 'number' && typeof curr.cp === 'number' ? Math.abs(curr.cp - prev.cp) : 0
         const moveNumber = typeof analyzedMoves[i]?.ply === 'number' ? Math.ceil(analyzedMoves[i].ply / 2) : i + 1
+        if (targetSide) {
+          const isWhiteMove = (analyzedMoves[i]?.ply ?? i + 1) % 2 === 1
+          if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) continue
+        }
         if (delta >= 250) {
           summary.total.blunders += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
@@ -81,7 +118,7 @@ export function analyzeGames(games: LichessGame[]): AnalysisSummary {
   }
 
   summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
-  summary.topBlunders = summary.topBlunders.slice(0, 10)
+  // Do not slice; allow pagination at the UI level
   return summary
 }
 

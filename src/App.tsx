@@ -11,15 +11,23 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [games, setGames] = useState<LichessGame[] | null>(null)
   const [summary, setSummary] = useState<AnalysisSummary | null>(null)
+  const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
+  const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
 
   const handleAnalyze = async (username: string) => {
     setIsLoading(true)
     setError(null)
     setGames(null)
     try {
-      const data = await fetchLichessGames(username)
-      setGames(data)
-      setSummary(analyzeGames(data))
+      setSelectedUsername(username)
+      if (uploadedGames && uploadedGames.length) {
+        setGames(uploadedGames)
+        setSummary(analyzeGames(uploadedGames, { onlyForUsername: username }))
+      } else {
+        const data = await fetchLichessGames(username)
+        setGames(data)
+        setSummary(analyzeGames(data, { onlyForUsername: username }))
+      }
     } catch (err) {
       const msg = err instanceof LichessError ? err.message : 'Unexpected error fetching games'
       setError(msg)
@@ -32,8 +40,8 @@ export default function App() {
     const onUpload = (e: any) => {
       const uploaded = e.detail?.games as LichessGame[] | undefined
       if (uploaded && uploaded.length) {
-        setGames(uploaded)
-        setSummary(analyzeGames(uploaded))
+        // Store uploaded games but do not analyze until user clicks Analyze
+        setUploadedGames(uploaded)
         setError(null)
       }
     }
@@ -72,12 +80,12 @@ export default function App() {
           {!isLoading && !error && summary && (
             <>
               <div className="mb-6 rounded-lg border border-slate-800 bg-slate-800/60 p-4 text-left">
-                <p className="text-gray-200">Fetched {games?.length ?? 0} games.</p>
+                <p className="text-gray-200">Analyzed {games?.length ?? 0} games.</p>
                 <p className="mt-1 text-sm text-gray-400">
                   Blunders: {summary.total.blunders}, Mistakes: {summary.total.mistakes}, Inaccuracies: {summary.total.inaccuracies}
                 </p>
               </div>
-              <Dashboard summary={summary} games={games ?? []} />
+              <Dashboard summary={summary} games={games ?? []} filterUsername={selectedUsername ?? undefined} />
             </>
           )}
         </div>
