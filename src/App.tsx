@@ -15,6 +15,7 @@ export default function App() {
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; phase: string } | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
   const workerRef = useRef<Worker | null>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
@@ -74,6 +75,12 @@ export default function App() {
       const handleMessage = (event: MessageEvent) => {
         if (event.data.type === 'progress') {
           setAnalysisProgress(event.data)
+        } else if (event.data.type === 'debug') {
+          setDebugLogs(prev => [...prev, { 
+            message: event.data.message, 
+            timestamp: event.data.timestamp, 
+            data: event.data.data 
+          }])
         } else if (event.data.type === 'result') {
           worker.removeEventListener('message', handleMessage)
           resolve(event.data.summary)
@@ -94,6 +101,7 @@ export default function App() {
     setGames(null)
     setAnalysisProgress(null)
     setIsAnalyzing(false)
+    setDebugLogs([]) // Clear debug logs
     try {
       setSelectedUsername(username ?? null)
       if (uploadedGames && uploadedGames.length) {
@@ -229,6 +237,23 @@ export default function App() {
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
                 style={{ width: `${(analysisProgress.current / analysisProgress.total) * 100}%` }}
               ></div>
+            </div>
+          </div>
+        )}
+        {debugLogs.length > 0 && (
+          <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg z-50 max-w-md max-h-96 overflow-y-auto">
+            <div className="text-sm font-semibold text-gray-200 mb-2">Debug Logs ({debugLogs.length})</div>
+            <div className="space-y-1 text-xs">
+              {debugLogs.slice(-20).map((log, index) => (
+                <div key={index} className="text-gray-300 border-b border-slate-700 pb-1">
+                  <div className="font-mono">[{log.timestamp.toFixed(1)}ms] {log.message}</div>
+                  {log.data && (
+                    <div className="text-gray-400 ml-2">
+                      {JSON.stringify(log.data, null, 2)}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}

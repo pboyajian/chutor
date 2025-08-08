@@ -24,6 +24,9 @@ export default function MistakeList({
 }) {
   // Cache per-game verbose moves (SAN) for quick played move lookups
   const verboseByGame = useMemo(() => {
+    const startTime = performance.now()
+    console.log('MistakeList: Starting verbose moves computation', { gameCount: games.length })
+    
     const map = new Map<string, Array<{ san: string; from: string; to: string; promotion?: string }>>()
     for (const g of games as any[]) {
       const id = String(g?.id ?? '')
@@ -43,6 +46,9 @@ export default function MistakeList({
         map.set(id, [])
       }
     }
+    
+    const duration = performance.now() - startTime
+    console.log('MistakeList: Verbose moves computation completed', { duration, gameCount: games.length })
     return map
   }, [games])
   const [sortMode, setSortMode] = useState<'recurrence' | 'move'>('recurrence')
@@ -56,6 +62,9 @@ export default function MistakeList({
 
   // Group recurring patterns by normalized position signature across all mistake types
   const { recurringPatterns, moveCounts } = useMemo(() => {
+    const startTime = performance.now()
+    console.log('MistakeList: Starting recurring patterns computation', { blunderCount: summary.topBlunders.length })
+    
     // Group by (opening, played SAN of the blunder move)
     const counts: Record<string, number> = {}
     const samples: Record<string, { gameId: string; moveNumber: number; opening: string; move: string }> = {}
@@ -79,10 +88,16 @@ export default function MistakeList({
     const recurring = Object.keys(counts)
       .map((k) => ({ key: k, count: counts[k], opening: samples[k].opening, move: samples[k].move, sample: { gameId: samples[k].gameId, moveNumber: samples[k].moveNumber } }))
       .sort((a, b) => b.count - a.count)
+    
+    const duration = performance.now() - startTime
+    console.log('MistakeList: Recurring patterns computation completed', { duration, patternCount: recurring.length })
     return { recurringPatterns: recurring, moveCounts: counts }
   }, [games, summary.topBlunders, verboseByGame])
 
   const items = useMemo(() => {
+    const startTime = performance.now()
+    console.log('MistakeList: Starting items computation', { blunderCount: summary.topBlunders.length })
+    
     const map: Record<string, LichessGame> = {}
     for (const g of games) {
       const id = String((g as any)?.id ?? '')
@@ -184,7 +199,11 @@ export default function MistakeList({
     if (sortMode === 'move') {
       return withMeta.sort((a, b) => a.moveNumber - b.moveNumber)
     }
-    return withMeta.sort((a, b) => b.frequency - a.frequency)
+    const result = withMeta.sort((a, b) => b.frequency - a.frequency)
+    
+    const duration = performance.now() - startTime
+    console.log('MistakeList: Items computation completed', { duration, itemCount: result.length })
+    return result
   }, [games, summary.topBlunders, moveCounts, sortMode, verboseByGame])
 
   const pagedItems = useMemo(() => {
