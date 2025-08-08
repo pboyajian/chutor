@@ -1,19 +1,21 @@
 import { useEffect, useState, useRef } from 'react'
+import { Chess } from 'chess.js'
 import UsernameForm from './components/UsernameForm'
 import Dashboard from './components/Dashboard'
-import fetchLichessGames, { LichessError, type LichessGame } from './lib/lichess'
-import analyzeGames, { type AnalysisSummary } from './lib/analysis'
-import Spinner from './components/Spinner'
 import DashboardSkeleton from './components/DashboardSkeleton'
+import Spinner from './components/Spinner'
+import { fetchLichessGames, LichessError } from './lib/lichess'
+import { apiClient } from './lib/api'
+import type { LichessGame } from './lib/lichess'
+import type { AnalysisSummary } from './lib/analysis'
 
 export default function App() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [games, setGames] = useState<LichessGame[] | null>(null)
   const [summary, setSummary] = useState<AnalysisSummary | null>(null)
-  const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
-  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; phase: string } | null>(null)
+  const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
   const [debugPanelVisible, setDebugPanelVisible] = useState(true)
@@ -65,46 +67,10 @@ export default function App() {
     return best
   }
 
-  const analyzeWithWorker = (games: LichessGame[], options: { onlyForUsername?: string } = {}) => {
-    return new Promise<AnalysisSummary>((resolve, reject) => {
-      // Create a new worker for each analysis to avoid conflicts
-      const worker = new Worker(new URL('./workers/analysis.worker.ts', import.meta.url), { type: 'module' })
-      
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data.type === 'progress') {
-          setAnalysisProgress(event.data)
-        } else if (event.data.type === 'debug') {
-          setDebugLogs(prev => {
-            const newLogs = [...prev, { 
-              message: event.data.message, 
-              timestamp: event.data.timestamp, 
-              data: event.data.data 
-            }]
-            // Keep only last 100 logs to prevent memory issues
-            return newLogs.slice(-100)
-          })
-        } else if (event.data.type === 'result') {
-          worker.removeEventListener('message', handleMessage)
-          worker.terminate() // Clean up the worker
-          console.log('Worker result received:', event.data.summary)
-          resolve(event.data.summary)
-        } else if (event.data.type === 'error') {
-          worker.removeEventListener('message', handleMessage)
-          worker.terminate() // Clean up the worker
-          reject(new Error(event.data.error))
-        }
-      }
-
-      worker.addEventListener('message', handleMessage)
-      worker.postMessage({ type: 'analyze', games, options })
-    })
-  }
-
   const handleAnalyze = async (username?: string) => {
     setIsLoading(true)
     setError(null)
     setGames(null)
-    setAnalysisProgress(null)
     setIsAnalyzing(false)
     setDebugLogs([]) // Clear debug logs
     try {
@@ -115,9 +81,17 @@ export default function App() {
         setIsAnalyzing(true)
         const detected = deriveUsernameFromGames(uploadedGames)
         setSelectedUsername(detected ?? null)
-        const result = await analyzeWithWorker(uploadedGames, { onlyForUsername: detected })
-        console.log('Analysis completed, setting summary:', result)
-        setSummary(result)
+        
+        // Use backend API instead of worker
+        const result = await apiClient.analyzeGames(uploadedGames, { onlyForUsername: detected })
+        setSummary(result.summary)
+        
+        // Add debug log
+        setDebugLogs(prev => [...prev, {
+          message: 'Backend analysis completed',
+          timestamp: Date.now(),
+          data: { processingTime: result.processingTime, gameCount: result.gameCount }
+        }])
       } else {
         const abort = new AbortController()
         try {
@@ -127,8 +101,17 @@ export default function App() {
           setIsAnalyzing(true)
           const detected = deriveUsernameFromGames(data)
           setSelectedUsername(detected ?? (username ?? null))
-          const result = await analyzeWithWorker(data, { onlyForUsername: detected ?? username })
-          setSummary(result)
+          
+          // Use backend API instead of worker
+          const result = await apiClient.analyzeGames(data, { onlyForUsername: detected ?? username })
+          setSummary(result.summary)
+          
+          // Add debug log
+          setDebugLogs(prev => [...prev, {
+            message: 'Backend analysis completed',
+            timestamp: Date.now(),
+            data: { processingTime: result.processingTime, gameCount: result.gameCount }
+          }])
         } finally {
           abort.abort()
         }
@@ -136,10 +119,16 @@ export default function App() {
     } catch (err) {
       const msg = err instanceof LichessError ? err.message : 'Unexpected error fetching games'
       setError(msg)
+      
+      // Add error to debug logs
+      setDebugLogs(prev => [...prev, {
+        message: 'Analysis error',
+        timestamp: Date.now(),
+        data: { error: msg }
+      }])
     } finally {
       setIsLoading(false)
       setIsAnalyzing(false)
-      setAnalysisProgress(null)
     }
   }
 
@@ -152,7 +141,6 @@ export default function App() {
         setError(null)
         setIsLoading(true)
         setGames(null)
-        setAnalysisProgress(null)
         setIsAnalyzing(false)
         Promise.resolve()
           .then(async () => {
@@ -161,15 +149,29 @@ export default function App() {
             setGames(uploaded)
             // Show immediate feedback
             setIsAnalyzing(true)
-            const result = await analyzeWithWorker(uploaded, { onlyForUsername: detected })
-            console.log('Analysis completed, setting summary:', result)
-            setSummary(result)
+            
+            // Use backend API instead of worker
+            const result = await apiClient.analyzeGames(uploaded, { onlyForUsername: detected })
+            setSummary(result.summary)
+            
+            // Add debug log
+            setDebugLogs(prev => [...prev, {
+              message: 'Backend analysis completed',
+              timestamp: Date.now(),
+              data: { processingTime: result.processingTime, gameCount: result.gameCount }
+            }])
           })
-          .catch(() => {})
+          .catch((error) => {
+            setError('Failed to analyze uploaded games')
+            setDebugLogs(prev => [...prev, {
+              message: 'Upload analysis error',
+              timestamp: Date.now(),
+              data: { error: error.message }
+            }])
+          })
           .finally(() => {
             setIsLoading(false)
             setIsAnalyzing(false)
-            setAnalysisProgress(null)
           })
       }
     }
@@ -237,19 +239,6 @@ export default function App() {
             </>
           )}
         </div>
-        {analysisProgress && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 shadow-lg z-50">
-            <div className="text-sm text-gray-200">
-              {analysisProgress.phase}... {analysisProgress.current} / {analysisProgress.total}
-            </div>
-            <div className="w-full bg-slate-700 rounded-full h-2 mt-2">
-              <div 
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
-                style={{ width: `${(analysisProgress.current / analysisProgress.total) * 100}%` }}
-              ></div>
-            </div>
-          </div>
-        )}
         {debugLogs.length > 0 && debugPanelVisible && (
           <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg z-50 max-w-md max-h-96 overflow-hidden">
             <div className="flex justify-between items-center mb-2">
