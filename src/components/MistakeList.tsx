@@ -34,7 +34,7 @@ export default function MistakeList({
 
   // Kick off worker when inputs change
   useEffect(() => {
-    if (!summary?.topBlunders?.length || !games?.length) {
+    if (!summary?.topMistakes?.length || !games?.length) {
       setPreparedItems([])
       setRecurringPatterns([])
       return
@@ -69,7 +69,7 @@ export default function MistakeList({
 
     const payload = {
       games,
-      blunders: summary.topBlunders.map((b) => ({ gameId: b.gameId, moveNumber: b.moveNumber, ply: b.ply, centipawnLoss: b.centipawnLoss })),
+      mistakes: summary.topMistakes.map((m) => ({ gameId: m.gameId, moveNumber: m.moveNumber, ply: m.ply, centipawnLoss: m.centipawnLoss, kind: m.kind })),
     }
     w.postMessage(payload)
 
@@ -86,6 +86,7 @@ export default function MistakeList({
       gameId: it.gameId,
       moveNumber: it.moveNumber,
       centipawnLoss: it.centipawnLoss,
+      kind: it.kind as 'inaccuracy' | 'mistake' | 'blunder' | undefined,
       playedSan: it.playedSan as string | undefined,
       bestSan: it.bestSan as string | undefined,
       opening: String(it.opening ?? 'Unknown'),
@@ -138,7 +139,7 @@ export default function MistakeList({
       )}
 
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-md font-semibold text-gray-100">Top blunders</h3>
+        <h3 className="text-md font-semibold text-gray-100">Top mistakes</h3>
         <div className="flex items-center gap-2">
           <label className="text-xs text-gray-300" htmlFor="blunder-sort">Sort:</label>
           <select
@@ -155,8 +156,8 @@ export default function MistakeList({
           </select>
         </div>
       </div>
-      {isPreparing && <p className="text-sm text-gray-400">Preparing blunders…</p>}
-      {!isPreparing && items.length === 0 && <p className="text-sm text-gray-400">No blunders identified.</p>}
+      {isPreparing && <p className="text-sm text-gray-400">Preparing mistakes…</p>}
+      {!isPreparing && items.length === 0 && <p className="text-sm text-gray-400">No mistakes identified.</p>}
       <ul role="list" className="divide-y divide-slate-700 text-left">
         {pagedItems.map((item) => {
           const opening = String((item.game as any)?.opening?.name ?? item.opening ?? 'Unknown')
@@ -185,6 +186,9 @@ export default function MistakeList({
                   </div>
                 </div>
                 <div className="text-right">
+                  {item.kind && (
+                    <div className={`text-[10px] uppercase tracking-wide mb-1 inline-block px-1.5 py-0.5 rounded ${item.kind === 'blunder' ? 'bg-red-700/40 text-red-200' : item.kind === 'mistake' ? 'bg-amber-700/40 text-amber-200' : 'bg-sky-700/40 text-sky-200'}`}>{item.kind}</div>
+                  )}
                   {typeof item.centipawnLoss === 'number' && (
                     <div className="text-sm tabular-nums text-gray-300">Δcp: {item.centipawnLoss}</div>
                   )}

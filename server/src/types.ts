@@ -30,6 +30,14 @@ export interface AnalysisSummary {
     side: 'white' | 'black'
     centipawnLoss?: number
   }>
+  topMistakes: Array<{
+    gameId: string
+    moveNumber: number
+    ply: number
+    side: 'white' | 'black'
+    centipawnLoss?: number
+    kind: 'inaccuracy' | 'mistake' | 'blunder'
+  }>
 }
 
 export interface AnalysisRequest {

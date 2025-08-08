@@ -1,13 +1,14 @@
-// Web Worker to prepare heavy blunder details for MistakeList
-// Receives: { games, blunders }
+// Web Worker to prepare heavy mistake details for MistakeList
+// Receives: { games, mistakes }
 // Returns: { items, recurringPatterns, progress? }
 
 // We keep types minimal to avoid coupling
-export interface WorkerBlunder {
+export interface WorkerMistake {
   gameId: string
   moveNumber: number
   ply?: number
   centipawnLoss?: number
+  kind?: 'inaccuracy' | 'mistake' | 'blunder'
 }
 
 type VerboseMove = { san: string; from: string; to: string; promotion?: string }
@@ -47,20 +48,21 @@ function extractBestSanFromComment(prevFen: string, comment?: string): string | 
 }
 
 self.onmessage = (evt: MessageEvent) => {
-  const { games, blunders } = evt.data as { games: any[]; blunders: WorkerBlunder[] }
+  const { games, mistakes } = evt.data as { games: any[]; mistakes: WorkerMistake[] }
 
   const start = Date.now()
-  const blundersByGame = new Map<string, WorkerBlunder[]>()
-  for (const b of blunders) {
-    const arr = blundersByGame.get(b.gameId) || []
-    arr.push(b)
-    blundersByGame.set(b.gameId, arr)
+  const mistakesByGame = new Map<string, WorkerMistake[]>()
+  for (const m of mistakes) {
+    const arr = mistakesByGame.get(m.gameId) || []
+    arr.push(m)
+    mistakesByGame.set(m.gameId, arr)
   }
 
   const items: Array<{
     gameId: string
     moveNumber: number
     centipawnLoss?: number
+    kind?: 'inaccuracy' | 'mistake' | 'blunder'
     playedSan?: string
     bestSan?: string
     opening: string
@@ -79,7 +81,7 @@ self.onmessage = (evt: MessageEvent) => {
 
   let processed = 0
 
-  for (const [gameId, group] of blundersByGame.entries()) {
+  for (const [gameId, group] of mistakesByGame.entries()) {
     const game = gameMap[gameId]
     if (!game) continue
     const opening = String(game?.opening?.name ?? 'Unknown')
@@ -125,7 +127,7 @@ self.onmessage = (evt: MessageEvent) => {
 
       const fen = fenAtPly.get(ply) || temp.fen()
 
-      items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, playedSan, bestSan, opening, fen })
+      items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, kind: b.kind, playedSan, bestSan, opening, fen })
 
       const key = `${opening}||${playedSan ?? '—'}`
       counts[key] = (counts[key] ?? 0) + 1
