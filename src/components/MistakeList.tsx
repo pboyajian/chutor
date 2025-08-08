@@ -86,6 +86,98 @@ export default function MistakeList({
       const id = String((g as any)?.id ?? '')
       if (id) map[id] = g
     }
+    // Cache parsed verbose moves per game for SAN lookups
+    const gameVerboseMoves = new Map<string, Array<{ san: string; from: string; to: string; promotion?: string }>>()
+    const getVerboseMoves = (game: any) => {
+      const gid = String(game?.id ?? '')
+      const cached = gameVerboseMoves.get(gid)
+      if (cached) return cached
+      const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
+      const engine = new Chess()
+      if (pgnRaw) engine.loadPgn(pgnRaw)
+      const verbose = engine.history({ verbose: true }) as Array<{ san: string; from: string; to: string; promotion?: string }>
+      gameVerboseMoves.set(gid, verbose)
+      return verbose
+    }
+
+    const computePlayedSan = (game: any, moveNumber: number): string | undefined => {
+      try {
+        const verbose = getVerboseMoves(game)
+        const plyIndex = Math.max(0, Math.min(verbose.length - 1, moveNumber * 2 - 2))
+        return verbose[plyIndex]?.san
+      } catch {
+        return undefined
+      }
+    }
+
+    const extractBestMoveSan = (game: any, moveNumber: number): string | undefined => {
+      try {
+        const analyzed = Array.isArray(game?.analysis) ? (game.analysis as any[]) : []
+        const isWhiteMove = (moveNumber * 2 - 1) % 2 === 1
+        const targetPly = isWhiteMove ? moveNumber * 2 - 1 : moveNumber * 2
+        const mv = analyzed.find((m) => typeof m?.ply === 'number' && m.ply === targetPly)
+        if (!mv) return undefined
+        // If UCI best move available
+        const uci: string | undefined = (mv?.best as string) || (mv?.uciBest as string) || undefined
+        if (uci && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) {
+          // Build position before the move
+          const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
+          const engine = new Chess()
+          if (pgnRaw) engine.loadPgn(pgnRaw)
+          const verbose = engine.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>
+          // Rebuild up to previous ply
+          const prev = new Chess()
+          if (pgnRaw) {
+            let count = 0
+            for (const m of verbose) {
+              if (count >= targetPly - 1) break
+              prev.move({ from: m.from, to: m.to, promotion: m.promotion })
+              count += 1
+            }
+          }
+          const move = {
+            from: uci.slice(0, 2),
+            to: uci.slice(2, 4),
+            promotion: uci.length === 5 ? (uci[4] as 'q' | 'r' | 'b' | 'n') : undefined,
+          }
+          const res = prev.move(move as any)
+          if (res && typeof (res as any).san === 'string') return (res as any).san as string
+        }
+
+        const comment: string | undefined = (mv?.judgment?.comment as string | undefined) || (mv?.comment as string | undefined)
+        if (comment) {
+          // Try to find a legal SAN token in the comment on the position before the move
+          const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
+          const engine = new Chess()
+          if (pgnRaw) {
+            // Play up to previous ply
+            const tmp = new Chess()
+            tmp.loadPgn(pgnRaw)
+            const verbose = tmp.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>
+            const prev = new Chess()
+            let count = 0
+            for (const m of verbose) {
+              if (count >= targetPly - 1) break
+              prev.move({ from: m.from, to: m.to, promotion: m.promotion })
+              count += 1
+            }
+            // Extract SAN-like tokens and test legality
+            const sanCandidates = (comment.match(/(O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)/g) || [])
+            for (const cand of sanCandidates) {
+              try {
+                const res = prev.move(cand)
+                if (res) return (res as any).san as string
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return undefined
+    }
     // attach group frequency for sorting: by position signature, ignoring type/move order
     const withMeta = summary.topBlunders
       .filter((b) => b.gameId && map[b.gameId])
@@ -94,8 +186,10 @@ export default function MistakeList({
         const fen = computeFenAtMove(game, b.moveNumber)
         const sig = positionSignature(fen)
         const frequency = signatureCounts[sig] ?? 1
-        return { ...b, game, frequency }
-      }) as Array<MistakeItemMeta & { game: any; frequency: number }>
+        const playedSan = computePlayedSan(game, b.moveNumber)
+        const bestSan = extractBestMoveSan(game, b.moveNumber)
+        return { ...b, game, frequency, playedSan, bestSan }
+      }) as Array<MistakeItemMeta & { game: any; frequency: number; playedSan?: string; bestSan?: string }>
 
     if (sortMode === 'move') {
       return withMeta.sort((a, b) => a.moveNumber - b.moveNumber)
@@ -228,6 +322,11 @@ export default function MistakeList({
                 <div>
                   <div className="font-medium text-gray-100">Move {item.moveNumber}</div>
                   <div className="text-sm text-gray-400 truncate max-w-[32ch]">{opening}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    <span className="text-gray-300">Played:</span> {item.playedSan ?? '—'}
+                    <span className="mx-2">•</span>
+                    <span className="text-gray-300">Best:</span> {item.bestSan ?? '—'}
+                  </div>
                 </div>
                 <div className="text-right">
                   {typeof item.centipawnLoss === 'number' && (
