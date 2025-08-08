@@ -74,7 +74,7 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
     const lineHeight = 14
     return (
       <g transform={`translate(${x},${y}) rotate(-25)`}>
-        <text x={0} y={8} textAnchor="start" fill="#374151">
+        <text x={0} y={8} dx={-4} textAnchor="end" fill="#374151">
           {lines.map((line, i) => (
             <tspan key={i} x={0} dy={i === 0 ? 0 : lineHeight}>
               {line}
