@@ -92,9 +92,25 @@ self.onmessage = (evt: MessageEvent) => {
     const neededPlies = new Set<number>()
     for (const b of group) neededPlies.add((b.moveNumber - 1) * 2)
 
-    // Parse PGN once
+    // Parse PGN once (fallback gracefully if missing)
     const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
-    if (!pgnRaw) continue
+    if (!pgnRaw) {
+      // Fallback: still emit items so the UI shows something; board jump will use a default FEN
+      for (const b of group) {
+        const fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, kind: b.kind, opening, fen })
+        const key = `${opening}||—`
+        counts[key] = (counts[key] ?? 0) + 1
+        if (!samples[key]) {
+          samples[key] = { gameId, moveNumber: b.moveNumber, opening, move: '—', fen }
+        }
+      }
+      processed += group.length
+      if (processed % 200 === 0) {
+        ;(self as any).postMessage({ type: 'progress', data: { processed, total } })
+      }
+      continue
+    }
 
     const engine = new Chess()
     engine.loadPgn(pgnRaw)

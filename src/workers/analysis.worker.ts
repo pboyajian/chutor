@@ -319,7 +319,7 @@ async function analyzeGamesWithProgress(
   summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   summary.topMistakes.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   const sortDuration = performance.now() - sortStartTime
-  log('Sorting completed', { sortDuration, blunderCount: summary.topBlunders.length })
+  log('Sorting completed', { sortDuration, blunderCount: summary.topBlunders.length, mistakeCount: summary.topMistakes.length })
   
   // Show that we're now preparing the UI
   postMessage({ type: 'progress', current: total, total, phase: 'Preparing results' })

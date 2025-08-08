@@ -35,7 +35,9 @@ export default function MistakeList({
 
   // Kick off worker when inputs change
   useEffect(() => {
-    if (!summary?.topMistakes?.length || !games?.length) {
+    const hasTopMistakes = Array.isArray((summary as any)?.topMistakes) && (summary as any).topMistakes.length > 0
+    const hasTopBlunders = Array.isArray((summary as any)?.topBlunders) && (summary as any).topBlunders.length > 0
+    if ((!hasTopMistakes && !hasTopBlunders) || !games?.length) {
       setPreparedItems([])
       setRecurringPatterns([])
       setIsPreparing(false)
@@ -45,7 +47,8 @@ export default function MistakeList({
     setIsPreparing(true)
     setPreparedItems([])
     setRecurringPatterns([])
-    setProgress({ processed: 0, total: summary.topMistakes.length })
+    const totalCount = hasTopMistakes ? (summary as any).topMistakes.length : (summary as any).topBlunders.length
+    setProgress({ processed: 0, total: totalCount })
 
     // Terminate any existing worker
     if (workerRef.current) {
@@ -63,7 +66,7 @@ export default function MistakeList({
         return
       }
       if (type === 'result') {
-        setPreparedItems(data.items || [])
+        setPreparedItems(Array.isArray(data.items) ? data.items : [])
         setRecurringPatterns(data.recurringPatterns || [])
         setIsPreparing(false)
         setProgress(null)
@@ -79,11 +82,14 @@ export default function MistakeList({
     }
 
     const MAX_ITEMS = 3000
-    const limited = summary.topMistakes.slice(0, MAX_ITEMS)
+    const source: any[] = hasTopMistakes
+      ? (summary as any).topMistakes
+      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
+    const limited = Array.isArray(source) ? source.slice(0, MAX_ITEMS) : []
     setProgress({ processed: 0, total: limited.length })
     const payload = {
       games,
-      mistakes: limited.map((m) => ({ gameId: m.gameId, moveNumber: m.moveNumber, ply: m.ply, centipawnLoss: m.centipawnLoss, kind: m.kind })),
+      mistakes: limited.map((m: any) => ({ gameId: String(m.gameId ?? ''), moveNumber: Number(m.moveNumber ?? 0), ply: Number(m.ply ?? 0), centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined, kind: m.kind })),
     }
     w.postMessage(payload)
 
