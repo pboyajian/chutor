@@ -4,4 +4,4 @@ dist
 *.log
 .vscode/
 .idea/
-
+.cursor/

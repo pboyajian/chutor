@@ -34,22 +34,23 @@ export default function UsernameForm({
         value={username}
         onChange={(e) => setUsername(e.target.value)}
         disabled={isLoading}
-        className="flex-1 rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        className="flex-1 rounded-md border border-slate-700 bg-slate-800/60 text-gray-200 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/60 transition disabled:opacity-50"
         aria-label="Lichess username"
       />
       <button
         type="submit"
         disabled={isLoading}
-        className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+        className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 transition disabled:opacity-50"
       >
         {isLoading ? 'Analyzing…' : 'Analyze'}
       </button>
 
-      <span className="text-gray-400">or</span>
-      <div className="flex flex-col">
-        <label className="inline-flex items-center gap-2 cursor-pointer mb-1">
+      <span className="text-gray-500">or</span>
+      <div className="flex flex-col text-left">
+        <label className="inline-flex items-center gap-2 cursor-pointer mb-1 text-gray-300">
           <input
             type="checkbox"
+            className="accent-blue-600"
             checked={useUpload}
             onChange={(e) => setUseUpload(e.target.checked)}
           />
@@ -61,7 +62,7 @@ export default function UsernameForm({
             accept=".pgn,.txt,.png"
             onChange={handleFileChange}
             disabled={isLoading}
-            className="block"
+            className="block text-sm text-gray-300 file:mr-4 file:rounded-md file:border-0 file:bg-slate-700 file:text-gray-200 file:px-3 file:py-2 hover:file:bg-slate-600 transition"
           />
         )}
       </div>

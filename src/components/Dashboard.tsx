@@ -1,5 +1,8 @@
-import React, { useState } from 'react'
-import type { AnalysisSummary } from '../lib/analysis'
+import React, { useMemo, useState } from 'react'
+import analyzeGames, { type AnalysisSummary } from '../lib/analysis'
+import type { LichessGame } from '../lib/lichess'
+import MistakeList from './MistakeList'
+import ChessboardDisplay from './ChessboardDisplay'
 import {
   PieChart,
   Pie,
@@ -14,19 +17,47 @@ import {
   Bar,
 } from 'recharts'
 
-const COLORS = ['#ef4444', '#f59e0b', '#60a5fa']
+const COLORS = ['#60a5fa', '#22d3ee', '#a78bfa']
 
 type ChartView = 'pie' | 'bar'
 
-export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
+export default function Dashboard({ summary, games = [] }: { summary: AnalysisSummary; games?: LichessGame[] }) {
   const [view, setView] = useState<ChartView>('pie')
+  const [selectedFen, setSelectedFen] = useState<string>(
+    'rn1qkbnr/pp3ppp/2p5/3pp3/8/1P2PN2/PBPP1PPP/RN1QKB1R w KQkq - 0 5',
+  )
+  const [selectedMeta, setSelectedMeta] = useState<{ gameId: string; moveNumber: number } | null>(null)
+  const [selectedOpening, setSelectedOpening] = useState<string | null>(null)
+  const orientation: 'white' | 'black' = useMemo(() => {
+    const parts = selectedFen.split(' ')
+    return parts[1] === 'b' ? 'black' : 'white'
+  }, [selectedFen])
+  const toMoveLabel = orientation === 'black' ? 'Black to move' : 'White to move'
+  const openings = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const g of games as any[]) {
+      const name = String(g?.opening?.name ?? 'Unknown')
+      counts[name] = (counts[name] ?? 0) + 1
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+  }, [games])
+
+  const filteredGames = useMemo(() => {
+    if (!selectedOpening) return games
+    return (games as any[]).filter((g) => String(g?.opening?.name ?? 'Unknown') === selectedOpening)
+  }, [games, selectedOpening])
+
+  const activeSummary = useMemo(() => analyzeGames(filteredGames), [filteredGames])
+
   const pieData = [
-    { name: 'Blunders', value: summary.total.blunders },
-    { name: 'Mistakes', value: summary.total.mistakes },
-    { name: 'Inaccuracies', value: summary.total.inaccuracies },
+    { name: 'Blunders', value: activeSummary.total.blunders },
+    { name: 'Mistakes', value: activeSummary.total.mistakes },
+    { name: 'Inaccuracies', value: activeSummary.total.inaccuracies },
   ]
 
-  const topOpeningBlunders = Object.entries(summary.blundersByOpening)
+  const topOpeningBlunders = Object.entries(activeSummary.blundersByOpening)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([opening, count]) => ({ opening, count }))
@@ -86,35 +117,65 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
   }
 
   return (
-    <div className="mt-8">
-      <div className="mb-4 inline-flex rounded-md shadow-sm" role="tablist" aria-label="Chart view">
-        <button
-          type="button"
-          onClick={() => setView('pie')}
-          className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-l-md ${
-            view === 'pie' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-          }`}
-          role="tab"
-          aria-selected={view === 'pie'}
-        >
-          Mistake Types
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('bar')}
-          className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-r-md -ml-px ${
-            view === 'bar' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-          }`}
-          role="tab"
-          aria-selected={view === 'bar'}
-        >
-          Top Blunder Openings
-        </button>
+    <div className="mt-8 animate-fade-in">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-md shadow-sm" role="tablist" aria-label="Chart view">
+          <button
+            type="button"
+            onClick={() => setView('pie')}
+            className={`px-4 py-2 text-sm font-medium border border-slate-700 rounded-l-md ${
+              view === 'pie' ? 'bg-blue-600 text-white' : 'bg-slate-800/60 text-gray-200 hover:bg-slate-700'
+            }`}
+            role="tab"
+            aria-selected={view === 'pie'}
+          >
+            Mistake Types
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('bar')}
+            className={`px-4 py-2 text-sm font-medium border border-slate-700 rounded-r-md -ml-px ${
+              view === 'bar' ? 'bg-blue-600 text-white' : 'bg-slate-800/60 text-gray-200 hover:bg-slate-700'
+            }`}
+            role="tab"
+            aria-selected={view === 'bar'}
+          >
+            Top Blunder Openings
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="opening-filter" className="text-sm text-gray-300">
+            Filter by opening:
+          </label>
+          <select
+            id="opening-filter"
+            value={selectedOpening ?? ''}
+            onChange={(e) => setSelectedOpening(e.target.value ? e.target.value : null)}
+            className="px-2 py-1 border border-slate-700 rounded text-sm bg-slate-800/60 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+          >
+            <option value="">All openings</option>
+            {openings.map((op) => (
+              <option key={op} value={op}>
+                {op}
+              </option>
+            ))}
+          </select>
+          {selectedOpening && (
+            <button
+              type="button"
+              onClick={() => setSelectedOpening(null)}
+              className="text-sm text-blue-400 hover:text-blue-300"
+              aria-label="Reset opening filter"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       {view === 'pie' && (
-        <div className="rounded border border-gray-200 p-4 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">Mistake Type Distribution</h2>
+        <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-scale-in">
+          <h2 className="mb-4 text-lg font-semibold text-gray-100">Mistake Type Distribution</h2>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -132,8 +193,8 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
       )}
 
       {view === 'bar' && (
-        <div className="rounded border border-gray-200 p-4 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">Top 5 Openings with Most Blunders</h2>
+        <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-scale-in">
+          <h2 className="mb-4 text-lg font-semibold text-gray-100">Top 5 Openings with Most Blunders</h2>
           <div className="h-[30rem]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 60, left: 100, bottom: 160 }}>
@@ -141,12 +202,28 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
                 <XAxis dataKey="opening" interval={0} height={140} tickMargin={12} tick={<OpeningTick x={0} y={0} payload={{ value: '' }} />} />
                 <YAxis allowDecimals={false} />
                 <RechartsTooltip />
-                <Bar dataKey="count" fill="#ef4444" />
+                <Bar dataKey="count" fill="#60a5fa" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       )}
+
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <MistakeList
+          games={filteredGames}
+          summary={activeSummary}
+          selected={selectedMeta}
+          onSelect={(fen, meta) => {
+            setSelectedFen(fen)
+            setSelectedMeta({ gameId: meta.gameId, moveNumber: meta.moveNumber })
+          }}
+        />
+        <div className="sticky top-4">
+          <div className="mb-2 text-sm text-gray-400">{toMoveLabel}</div>
+          <ChessboardDisplay fen={selectedFen} orientation={orientation} />
+        </div>
+      </div>
     </div>
   )
 }

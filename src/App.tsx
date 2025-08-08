@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/public/vite.svg'
 import UsernameForm from './components/UsernameForm'
 import Dashboard from './components/Dashboard'
 import fetchLichessGames, { LichessError, type LichessGame } from './lib/lichess'
 import analyzeGames, { type AnalysisSummary } from './lib/analysis'
+import Spinner from './components/Spinner'
+import DashboardSkeleton from './components/DashboardSkeleton'
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false)
@@ -42,38 +42,46 @@ export default function App() {
   }, [])
 
   return (
-    <div className="p-8 mx-auto max-w-3xl text-center">
-      <div>
-        <a href="https://vite.dev" target="_blank" rel="noreferrer">
-          <img src={viteLogo} className="inline-block h-16" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank" rel="noreferrer" className="ml-4">
-          <img src={reactLogo} className="inline-block h-16" alt="React logo" />
-        </a>
-      </div>
-      <h1 className="text-3xl font-bold my-6">Chutor</h1>
+    <div className="min-h-screen">
+      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur sticky top-0 z-10">
+        <div className="mx-auto max-w-7xl px-6 py-5">
+          <h1 className="text-2xl md:text-3xl font-semibold text-gray-100 tracking-tight">Chutor</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        <section className="text-center mb-8">
+          <h2 className="text-xl md:text-2xl font-medium text-gray-100 mb-4">Personalized Chess Improvement</h2>
+          <p className="text-gray-400 mb-6">Analyze your Lichess games to uncover recurring mistakes and patterns.</p>
+          <UsernameForm onAnalyze={handleAnalyze} isLoading={isLoading} />
+        </section>
 
-      <UsernameForm onAnalyze={handleAnalyze} isLoading={isLoading} />
-
-      <div className="mt-6 min-h-[2rem]">
-        {isLoading && <p>Fetching games...</p>}
-        {!isLoading && error && (
-          <p className="text-red-600" role="alert">
-            {error}
-          </p>
-        )}
-        {!isLoading && !error && summary && (
-          <>
-            <div className="text-green-700">
-              <p>Success! Fetched {games?.length ?? 0} games.</p>
-              <p className="mt-2 text-sm text-gray-700">
-                Blunders: {summary.total.blunders}, Mistakes: {summary.total.mistakes}, Inaccuracies: {summary.total.inaccuracies}
-              </p>
+        <div className="mt-6 min-h-[2rem]">
+          {isLoading && (
+            <div className="py-6">
+              <DashboardSkeleton />
+              <div className="flex items-center justify-center py-6">
+                <Spinner label="Analyzing your games…" />
+              </div>
             </div>
-            <Dashboard summary={summary} />
-          </>
-        )}
-      </div>
+          )}
+          {!isLoading && error && (
+            <p className="text-red-400" role="alert">
+              {error}
+            </p>
+          )}
+          {!isLoading && !error && summary && (
+            <>
+              <div className="mb-6 rounded-lg border border-slate-800 bg-slate-800/60 p-4 text-left">
+                <p className="text-gray-200">Fetched {games?.length ?? 0} games.</p>
+                <p className="mt-1 text-sm text-gray-400">
+                  Blunders: {summary.total.blunders}, Mistakes: {summary.total.mistakes}, Inaccuracies: {summary.total.inaccuracies}
+                </p>
+              </div>
+              <Dashboard summary={summary} games={games ?? []} />
+            </>
+          )}
+        </div>
+      </main>
     </div>
   )
 }
