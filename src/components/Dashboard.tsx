@@ -73,8 +73,8 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
     const lines = wrapLabelToLines(payload.value, 18)
     const lineHeight = 14
     return (
-      <g transform={`translate(${x},${y}) rotate(-25)`}>
-        <text x={0} y={8} dx={-4} textAnchor="end" fill="#374151">
+      <g transform={`translate(${x},${y}) rotate(25)`}>
+        <text x={0} y={8} dx={4} textAnchor="start" fill="#374151">
           {lines.map((line, i) => (
             <tspan key={i} x={0} dy={i === 0 ? 0 : lineHeight}>
               {line}
@@ -136,7 +136,7 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
           <h2 className="mb-4 text-lg font-semibold">Top 5 Openings with Most Blunders</h2>
           <div className="h-[30rem]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 80, left: 60, bottom: 160 }}>
+              <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 60, left: 100, bottom: 160 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="opening" interval={0} height={140} tickMargin={12} tick={<OpeningTick x={0} y={0} payload={{ value: '' }} />} />
                 <YAxis allowDecimals={false} />
