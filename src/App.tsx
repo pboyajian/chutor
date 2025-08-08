@@ -17,6 +17,7 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
   const workerRef = useRef<Worker | null>(null)
+  const debugScrollRef = useRef<HTMLDivElement>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
     const fromPgn = (raw?: string, tag?: string): string | undefined => {
@@ -76,11 +77,15 @@ export default function App() {
         if (event.data.type === 'progress') {
           setAnalysisProgress(event.data)
         } else if (event.data.type === 'debug') {
-          setDebugLogs(prev => [...prev, { 
-            message: event.data.message, 
-            timestamp: event.data.timestamp, 
-            data: event.data.data 
-          }])
+          setDebugLogs(prev => {
+            const newLogs = [...prev, { 
+              message: event.data.message, 
+              timestamp: event.data.timestamp, 
+              data: event.data.data 
+            }]
+            // Keep only last 100 logs to prevent memory issues
+            return newLogs.slice(-100)
+          })
         } else if (event.data.type === 'result') {
           worker.removeEventListener('message', handleMessage)
           resolve(event.data.summary)
@@ -179,6 +184,13 @@ export default function App() {
     }
   }, [])
 
+  // Auto-scroll debug logs to bottom
+  useEffect(() => {
+    if (debugScrollRef.current) {
+      debugScrollRef.current.scrollTop = debugScrollRef.current.scrollHeight
+    }
+  }, [debugLogs.length])
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur sticky top-0 z-10">
@@ -241,10 +253,10 @@ export default function App() {
           </div>
         )}
         {debugLogs.length > 0 && (
-          <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg z-50 max-w-md max-h-96 overflow-y-auto">
+          <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg z-50 max-w-md max-h-96 overflow-hidden">
             <div className="text-sm font-semibold text-gray-200 mb-2">Debug Logs ({debugLogs.length})</div>
-            <div className="space-y-1 text-xs">
-              {debugLogs.slice(-20).map((log, index) => (
+            <div ref={debugScrollRef} className="space-y-1 text-xs overflow-y-auto max-h-80" style={{ scrollbarWidth: 'thin' }}>
+              {debugLogs.map((log, index) => (
                 <div key={index} className="text-gray-300 border-b border-slate-700 pb-1">
                   <div className="font-mono">[{log.timestamp.toFixed(1)}ms] {log.message}</div>
                   {log.data && (

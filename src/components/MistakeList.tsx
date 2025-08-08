@@ -33,8 +33,10 @@ export default function MistakeList({
       if (!id) continue
       try {
         const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
+        if (!pgnRaw) continue
+        
         const engine = new Chess()
-        if (pgnRaw) engine.loadPgn(pgnRaw)
+        engine.loadPgn(pgnRaw)
         const verbose = engine.history({ verbose: true }) as Array<{
           san: string
           from: string
@@ -42,13 +44,55 @@ export default function MistakeList({
           promotion?: string
         }>
         map.set(id, verbose)
-      } catch {
+      } catch (error) {
+        console.warn('Failed to parse game moves:', id, error)
         map.set(id, [])
       }
     }
     
     const duration = performance.now() - startTime
     console.log('MistakeList: Verbose moves computation completed', { duration, gameCount: games.length })
+    return map
+  }, [games])
+
+  // Cache positions at each ply to avoid repeated chess.js operations
+  const positionsByGame = useMemo(() => {
+    const startTime = performance.now()
+    console.log('MistakeList: Starting position caching', { gameCount: games.length })
+    
+    const map = new Map<string, Map<number, Chess>>()
+    for (const g of games as any[]) {
+      const id = String(g?.id ?? '')
+      if (!id) continue
+      
+      try {
+        const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
+        if (!pgnRaw) continue
+        
+        const engine = new Chess()
+        engine.loadPgn(pgnRaw)
+        const verbose = engine.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>
+        
+        const positions = new Map<number, Chess>()
+        positions.set(0, new Chess()) // Starting position
+        
+        // Build positions incrementally
+        const temp = new Chess()
+        for (let i = 0; i < verbose.length; i++) {
+          const move = verbose[i]
+          temp.move({ from: move.from, to: move.to, promotion: move.promotion })
+          positions.set(i + 1, new Chess(temp.fen()))
+        }
+        
+        map.set(id, positions)
+      } catch (error) {
+        console.warn('Failed to cache positions for game:', id, error)
+        map.set(id, new Map())
+      }
+    }
+    
+    const duration = performance.now() - startTime
+    console.log('MistakeList: Position caching completed', { duration, gameCount: games.length })
     return map
   }, [games])
   const [sortMode, setSortMode] = useState<'recurrence' | 'move'>('recurrence')
@@ -121,64 +165,56 @@ export default function MistakeList({
         const targetPly = isWhiteMove ? moveNumber * 2 - 1 : moveNumber * 2
         const mv = analyzed.find((m) => typeof m?.ply === 'number' && m.ply === targetPly)
         if (!mv) return undefined
+        
         // If UCI best move available
         const uci: string | undefined = (mv?.best as string) || (mv?.uciBest as string) || undefined
         if (uci && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) {
-          // Build position before the move
-          const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
-          const engine = new Chess()
-          if (pgnRaw) engine.loadPgn(pgnRaw)
-          const verbose = engine.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>
-          // Rebuild up to previous ply
-          const prev = new Chess()
-          if (pgnRaw) {
-            let count = 0
-            for (const m of verbose) {
-              if (count >= targetPly - 1) break
-              prev.move({ from: m.from, to: m.to, promotion: m.promotion })
-              count += 1
-            }
-          }
-          const move = {
-            from: uci.slice(0, 2),
-            to: uci.slice(2, 4),
-            promotion: uci.length === 5 ? (uci[4] as 'q' | 'r' | 'b' | 'n') : undefined,
-          }
-          const res = prev.move(move as any)
-          if (res && typeof (res as any).san === 'string') return (res as any).san as string
-        }
-
-        const comment: string | undefined = (mv?.judgment?.comment as string | undefined) || (mv?.comment as string | undefined)
-        if (comment) {
-          // Try to find a legal SAN token in the comment on the position before the move
-          const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
-          const engine = new Chess()
-          if (pgnRaw) {
-            // Play up to previous ply
-            const tmp = new Chess()
-            tmp.loadPgn(pgnRaw)
-            const verbose = tmp.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>
-            const prev = new Chess()
-            let count = 0
-            for (const m of verbose) {
-              if (count >= targetPly - 1) break
-              prev.move({ from: m.from, to: m.to, promotion: m.promotion })
-              count += 1
-            }
-            // Extract SAN-like tokens and test legality
-            const sanCandidates = (comment.match(/(O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)/g) || [])
-            for (const cand of sanCandidates) {
+          // Use cached position instead of rebuilding
+          const gid = String(game?.id ?? '')
+          const positions = positionsByGame.get(gid)
+          if (positions) {
+            const prevPly = targetPly - 1
+            const prevPosition = positions.get(prevPly)
+            if (prevPosition) {
+              const move = {
+                from: uci.slice(0, 2),
+                to: uci.slice(2, 4),
+                promotion: uci.length === 5 ? (uci[4] as 'q' | 'r' | 'b' | 'n') : undefined,
+              }
               try {
-                const res = prev.move(cand)
-                if (res) return (res as any).san as string
+                const res = prevPosition.move(move as any)
+                if (res && typeof (res as any).san === 'string') return (res as any).san as string
               } catch {
-                // ignore
+                // ignore invalid moves
               }
             }
           }
         }
-      } catch {
-        // ignore
+
+        const comment: string | undefined = (mv?.judgment?.comment as string | undefined) || (mv?.comment as string | undefined)
+        if (comment) {
+          // Try to find a legal SAN token in the comment using cached position
+          const gid = String(game?.id ?? '')
+          const positions = positionsByGame.get(gid)
+          if (positions) {
+            const prevPly = targetPly - 1
+            const prevPosition = positions.get(prevPly)
+            if (prevPosition) {
+              // Extract SAN-like tokens and test legality
+              const sanCandidates = (comment.match(/(O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)/g) || [])
+              for (const cand of sanCandidates) {
+                try {
+                  const res = prevPosition.move(cand)
+                  if (res) return (res as any).san as string
+                } catch {
+                  // ignore invalid moves
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Error extracting best move SAN:', error)
       }
       return undefined
     }
@@ -204,7 +240,7 @@ export default function MistakeList({
     const duration = performance.now() - startTime
     console.log('MistakeList: Items computation completed', { duration, itemCount: result.length })
     return result
-  }, [games, summary.topBlunders, moveCounts, sortMode, verboseByGame])
+  }, [games, summary.topBlunders, moveCounts, sortMode, verboseByGame, positionsByGame])
 
   const pagedItems = useMemo(() => {
     const start = (page - 1) * pageSize
