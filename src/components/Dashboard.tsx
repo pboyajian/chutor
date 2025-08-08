@@ -47,13 +47,21 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
         </div>
       </div>
 
-      <div className="rounded border border-gray-200 p-4 shadow-sm">
+      <div className="rounded border border-gray-200 p-4 shadow-sm md:col-span-2">
         <h2 className="mb-4 text-lg font-semibold">Top 5 Openings with Most Blunders</h2>
-        <div className="h-64">
+        <div className="h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+            <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 20, left: 10, bottom: 80 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="opening" tick={{ fontSize: 12 }} interval={0} angle={-20} height={50} dy={10} />
+              <XAxis
+                dataKey="opening"
+                tick={{ fontSize: 12 }}
+                interval={0}
+                angle={-35}
+                height={80}
+                tickMargin={12}
+                textAnchor="end"
+              />
               <YAxis allowDecimals={false} />
               <RechartsTooltip />
               <Bar dataKey="count" fill="#ef4444" />
