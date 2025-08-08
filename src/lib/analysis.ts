@@ -9,6 +9,14 @@ export interface AnalysisSummary {
   mistakesByOpening: Record<string, number>
   blundersByOpening: Record<string, number>
   topBlunders: Array<{ gameId: string; moveNumber: number; ply: number; side: 'white' | 'black'; centipawnLoss?: number }>
+  topMistakes: Array<{
+    gameId: string
+    moveNumber: number
+    ply: number
+    side: 'white' | 'black'
+    centipawnLoss?: number
+    kind: 'inaccuracy' | 'mistake' | 'blunder'
+  }>
 }
 
 export function analyzeGames(
@@ -20,6 +28,7 @@ export function analyzeGames(
     mistakesByOpening: {},
     blundersByOpening: {},
     topBlunders: [],
+    topMistakes: [],
   }
 
   const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
@@ -72,9 +81,25 @@ export function analyzeGames(
       if (name === 'inaccuracy') {
         summary.total.inaccuracies += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          centipawnLoss,
+          kind: 'inaccuracy',
+        })
       } else if (name === 'mistake') {
         summary.total.mistakes += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          centipawnLoss,
+          kind: 'mistake',
+        })
       } else if (name === 'blunder') {
         summary.total.blunders += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
@@ -85,6 +110,14 @@ export function analyzeGames(
           ply: plyValue,
           side: plyValue % 2 === 1 ? 'white' : 'black',
           centipawnLoss,
+        })
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          centipawnLoss,
+          kind: 'blunder',
         })
       }
     })
@@ -134,18 +167,43 @@ export function analyzeGames(
             side: plyValue % 2 === 1 ? 'white' : 'black',
             centipawnLoss: delta,
           })
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+            kind: 'blunder',
+          })
         } else if (delta >= 150) {
           summary.total.mistakes += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+            kind: 'mistake',
+          })
         } else if (delta >= 60) {
           summary.total.inaccuracies += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+            kind: 'inaccuracy',
+          })
         }
       }
     }
   }
 
   summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  summary.topMistakes.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   // Do not slice; allow pagination at the UI level
   return summary
 }

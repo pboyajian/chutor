@@ -105,7 +105,8 @@ async function analyzeWithParallelWorkers(games: any[], options: any = {}): Prom
       total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
       mistakesByOpening: {} as Record<string, number>,
       blundersByOpening: {} as Record<string, number>,
-      topBlunders: [] as any[]
+      topBlunders: [] as any[],
+      topMistakes: [] as any[],
     }
     
     let totalProcessingTime = 0
@@ -128,6 +129,10 @@ async function analyzeWithParallelWorkers(games: any[], options: any = {}): Prom
       
       // Merge top blunders
       mergedSummary.topBlunders.push(...result.summary.topBlunders)
+      // Merge top mistakes (all types)
+      if (Array.isArray(result.summary.topMistakes)) {
+        mergedSummary.topMistakes.push(...result.summary.topMistakes)
+      }
       
       // Track processing stats
       totalProcessingTime = Math.max(totalProcessingTime, result.processingTime)
@@ -137,8 +142,9 @@ async function analyzeWithParallelWorkers(games: any[], options: any = {}): Prom
       }
     }
     
-    // Sort merged top blunders
+    // Sort merged top lists
     mergedSummary.topBlunders.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+    mergedSummary.topMistakes.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
     
     const totalTime = Date.now() - startTime
     

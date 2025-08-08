@@ -105,6 +105,7 @@ async function analyzeGamesWithProgress(
     mistakesByOpening: {},
     blundersByOpening: {},
     topBlunders: [],
+    topMistakes: [],
   }
   
   const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
@@ -179,9 +180,25 @@ async function analyzeGamesWithProgress(
       if (name === 'inaccuracy') {
         summary.total.inaccuracies += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          centipawnLoss,
+          kind: 'inaccuracy',
+        })
       } else if (name === 'mistake') {
         summary.total.mistakes += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          centipawnLoss,
+          kind: 'mistake',
+        })
       } else if (name === 'blunder') {
         summary.total.blunders += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
@@ -192,6 +209,14 @@ async function analyzeGamesWithProgress(
           ply: plyValue,
           side: plyValue % 2 === 1 ? 'white' : 'black',
           centipawnLoss,
+        })
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          centipawnLoss,
+          kind: 'blunder',
         })
       }
     })
@@ -234,12 +259,36 @@ async function analyzeGamesWithProgress(
             side: plyValue % 2 === 1 ? 'white' : 'black',
             centipawnLoss: delta,
           })
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+            kind: 'blunder',
+          })
         } else if (delta >= 150) {
           summary.total.mistakes += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+            kind: 'mistake',
+          })
         } else if (delta >= 60) {
           summary.total.inaccuracies += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+            kind: 'inaccuracy',
+          })
         }
       }
       moveProcessingTime += performance.now() - evalStartTime
@@ -268,8 +317,9 @@ async function analyzeGamesWithProgress(
   
   const sortStartTime = performance.now()
   summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  summary.topMistakes.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   const sortDuration = performance.now() - sortStartTime
-  log('Sorting completed', { sortDuration, blunderCount: summary.topBlunders.length })
+  log('Sorting completed', { sortDuration, blunderCount: summary.topBlunders.length, mistakeCount: summary.topMistakes.length })
   
   // Show that we're now preparing the UI
   postMessage({ type: 'progress', current: total, total, phase: 'Preparing results' })

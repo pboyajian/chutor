@@ -1,13 +1,14 @@
-// Web Worker to prepare heavy blunder details for MistakeList
-// Receives: { games, blunders }
+// Web Worker to prepare heavy mistake details for MistakeList
+// Receives: { games, mistakes }
 // Returns: { items, recurringPatterns, progress? }
 
 // We keep types minimal to avoid coupling
-export interface WorkerBlunder {
+export interface WorkerMistake {
   gameId: string
   moveNumber: number
   ply?: number
   centipawnLoss?: number
+  kind?: 'inaccuracy' | 'mistake' | 'blunder'
 }
 
 type VerboseMove = { san: string; from: string; to: string; promotion?: string }
@@ -47,20 +48,21 @@ function extractBestSanFromComment(prevFen: string, comment?: string): string | 
 }
 
 self.onmessage = (evt: MessageEvent) => {
-  const { games, blunders } = evt.data as { games: any[]; blunders: WorkerBlunder[] }
+  const { games, mistakes } = evt.data as { games: any[]; mistakes: WorkerMistake[] }
 
   const start = Date.now()
-  const blundersByGame = new Map<string, WorkerBlunder[]>()
-  for (const b of blunders) {
-    const arr = blundersByGame.get(b.gameId) || []
-    arr.push(b)
-    blundersByGame.set(b.gameId, arr)
+  const mistakesByGame = new Map<string, WorkerMistake[]>()
+  for (const m of mistakes) {
+    const arr = mistakesByGame.get(m.gameId) || []
+    arr.push(m)
+    mistakesByGame.set(m.gameId, arr)
   }
 
   const items: Array<{
     gameId: string
     moveNumber: number
     centipawnLoss?: number
+    kind?: 'inaccuracy' | 'mistake' | 'blunder'
     playedSan?: string
     bestSan?: string
     opening: string
@@ -79,7 +81,9 @@ self.onmessage = (evt: MessageEvent) => {
 
   let processed = 0
 
-  for (const [gameId, group] of blundersByGame.entries()) {
+  const allEntries = Array.from(mistakesByGame.entries())
+  const total = allEntries.reduce((acc, [, group]) => acc + group.length, 0)
+  for (const [gameId, group] of allEntries) {
     const game = gameMap[gameId]
     if (!game) continue
     const opening = String(game?.opening?.name ?? 'Unknown')
@@ -88,9 +92,25 @@ self.onmessage = (evt: MessageEvent) => {
     const neededPlies = new Set<number>()
     for (const b of group) neededPlies.add((b.moveNumber - 1) * 2)
 
-    // Parse PGN once
+    // Parse PGN once (fallback gracefully if missing)
     const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
-    if (!pgnRaw) continue
+    if (!pgnRaw) {
+      // Fallback: still emit items so the UI shows something; board jump will use a default FEN
+      for (const b of group) {
+        const fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, kind: b.kind, opening, fen })
+        const key = `${opening}||—`
+        counts[key] = (counts[key] ?? 0) + 1
+        if (!samples[key]) {
+          samples[key] = { gameId, moveNumber: b.moveNumber, opening, move: '—', fen }
+        }
+      }
+      processed += group.length
+      if (processed % 200 === 0) {
+        ;(self as any).postMessage({ type: 'progress', data: { processed, total } })
+      }
+      continue
+    }
 
     const engine = new Chess()
     engine.loadPgn(pgnRaw)
@@ -125,7 +145,7 @@ self.onmessage = (evt: MessageEvent) => {
 
       const fen = fenAtPly.get(ply) || temp.fen()
 
-      items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, playedSan, bestSan, opening, fen })
+      items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, kind: b.kind, playedSan, bestSan, opening, fen })
 
       const key = `${opening}||${playedSan ?? '—'}`
       counts[key] = (counts[key] ?? 0) + 1
@@ -135,8 +155,8 @@ self.onmessage = (evt: MessageEvent) => {
     }
 
     processed += group.length
-    if (processed % 100 === 0) {
-      ;(self as any).postMessage({ type: 'progress', data: { processed } })
+    if (processed % 200 === 0) {
+      ;(self as any).postMessage({ type: 'progress', data: { processed, total } })
     }
   }
 

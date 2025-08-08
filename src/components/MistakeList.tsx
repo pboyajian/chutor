@@ -31,17 +31,24 @@ export default function MistakeList({
   const [isPreparing, setIsPreparing] = useState(false)
   const [preparedItems, setPreparedItems] = useState<Array<any>>([])
   const [recurringPatterns, setRecurringPatterns] = useState<Array<any>>([])
+  const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null)
 
   // Kick off worker when inputs change
   useEffect(() => {
-    if (!summary?.topBlunders?.length || !games?.length) {
+    const hasTopMistakes = Array.isArray((summary as any)?.topMistakes) && (summary as any).topMistakes.length > 0
+    const hasTopBlunders = Array.isArray((summary as any)?.topBlunders) && (summary as any).topBlunders.length > 0
+    if ((!hasTopMistakes && !hasTopBlunders) || !games?.length) {
       setPreparedItems([])
       setRecurringPatterns([])
+      setIsPreparing(false)
+      setProgress(null)
       return
     }
     setIsPreparing(true)
     setPreparedItems([])
     setRecurringPatterns([])
+    const totalCount = hasTopMistakes ? (summary as any).topMistakes.length : (summary as any).topBlunders.length
+    setProgress({ processed: 0, total: totalCount })
 
     // Terminate any existing worker
     if (workerRef.current) {
@@ -55,21 +62,34 @@ export default function MistakeList({
     w.onmessage = (evt: MessageEvent) => {
       const { type, data } = evt.data || {}
       if (type === 'progress') {
-        // optional: could surface progress later
+        setProgress((prev) => ({ processed: data?.processed ?? (prev?.processed ?? 0), total: prev?.total ?? summary.topMistakes.length }))
         return
       }
       if (type === 'result') {
-        setPreparedItems(data.items || [])
+        setPreparedItems(Array.isArray(data.items) ? data.items : [])
         setRecurringPatterns(data.recurringPatterns || [])
         setIsPreparing(false)
+        setProgress(null)
         w.terminate()
         workerRef.current = null
       }
     }
+    w.onerror = () => {
+      setIsPreparing(false)
+      setProgress(null)
+      try { w.terminate() } catch {}
+      workerRef.current = null
+    }
 
+    const MAX_ITEMS = 3000
+    const source: any[] = hasTopMistakes
+      ? (summary as any).topMistakes
+      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
+    const limited = Array.isArray(source) ? source.slice(0, MAX_ITEMS) : []
+    setProgress({ processed: 0, total: limited.length })
     const payload = {
       games,
-      blunders: summary.topBlunders.map((b) => ({ gameId: b.gameId, moveNumber: b.moveNumber, ply: b.ply, centipawnLoss: b.centipawnLoss })),
+      mistakes: limited.map((m: any) => ({ gameId: String(m.gameId ?? ''), moveNumber: Number(m.moveNumber ?? 0), ply: Number(m.ply ?? 0), centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined, kind: m.kind })),
     }
     w.postMessage(payload)
 
@@ -86,6 +106,7 @@ export default function MistakeList({
       gameId: it.gameId,
       moveNumber: it.moveNumber,
       centipawnLoss: it.centipawnLoss,
+      kind: it.kind as 'inaccuracy' | 'mistake' | 'blunder' | undefined,
       playedSan: it.playedSan as string | undefined,
       bestSan: it.bestSan as string | undefined,
       opening: String(it.opening ?? 'Unknown'),
@@ -111,7 +132,9 @@ export default function MistakeList({
     <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-fade-in-up">
       <h2 className="mb-3 text-lg font-semibold text-gray-100">Recurring mistakes by opening and move</h2>
       {isPreparing ? (
-        <p className="text-sm text-gray-400 mb-3">Preparing blunder details…</p>
+        <p className="text-sm text-gray-400 mb-3">
+          Preparing mistake details… {progress ? `(${progress.processed}/${progress.total})` : ''}
+        </p>
       ) : recurringPatterns.length === 0 ? (
         <p className="text-sm text-gray-400 mb-3">No recurring mistakes found.</p>
       ) : (
@@ -138,7 +161,7 @@ export default function MistakeList({
       )}
 
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-md font-semibold text-gray-100">Top blunders</h3>
+        <h3 className="text-md font-semibold text-gray-100">Top mistakes</h3>
         <div className="flex items-center gap-2">
           <label className="text-xs text-gray-300" htmlFor="blunder-sort">Sort:</label>
           <select
@@ -155,8 +178,8 @@ export default function MistakeList({
           </select>
         </div>
       </div>
-      {isPreparing && <p className="text-sm text-gray-400">Preparing blunders…</p>}
-      {!isPreparing && items.length === 0 && <p className="text-sm text-gray-400">No blunders identified.</p>}
+      {isPreparing && <p className="text-sm text-gray-400">Preparing mistakes…</p>}
+      {!isPreparing && items.length === 0 && <p className="text-sm text-gray-400">No mistakes identified.</p>}
       <ul role="list" className="divide-y divide-slate-700 text-left">
         {pagedItems.map((item) => {
           const opening = String((item.game as any)?.opening?.name ?? item.opening ?? 'Unknown')
@@ -185,6 +208,9 @@ export default function MistakeList({
                   </div>
                 </div>
                 <div className="text-right">
+                  {item.kind && (
+                    <div className={`text-[10px] uppercase tracking-wide mb-1 inline-block px-1.5 py-0.5 rounded ${item.kind === 'blunder' ? 'bg-red-700/40 text-red-200' : item.kind === 'mistake' ? 'bg-amber-700/40 text-amber-200' : 'bg-sky-700/40 text-sky-200'}`}>{item.kind}</div>
+                  )}
                   {typeof item.centipawnLoss === 'number' && (
                     <div className="text-sm tabular-nums text-gray-300">Δcp: {item.centipawnLoss}</div>
                   )}

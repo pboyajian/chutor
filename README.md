@@ -7,7 +7,7 @@ Personalized chess improvement tool for Lichess game data. Chutor fetches or imp
 - Analyze Lichess games or upload PGN files
 - Auto-detects your username from games (no typing required)
 - Filters to show only your inaccuracies, mistakes, and blunders
-- Sort blunders by recurrence or by move order (earlier first)
+- Sort mistakes by recurrence or by move order (earlier first)
 - Paginated list to explore beyond the top 10
 - Shows “played” vs “best” move when available
 - Recurring mistake patterns by opening and move (e.g., “Bf4 in Englund Gambit”)
@@ -66,7 +66,7 @@ npm run dev
 2. In the app:
    - Enter a Lichess username to fetch games, or
    - Upload a PGN file (auto-analysis will run and auto-detect your username).
-3. Click items in the Top Blunders list to jump the board to that position.
+3. Click items in the Top Mistakes list to jump the board to that position.
 4. Switch sorting between “By recurrence” and “By move number”.
 5. Use the opening filter to narrow the dataset. The menu lists only openings present in the loaded games.
 6. Toggle the debug panel to see backend timing and status logs.

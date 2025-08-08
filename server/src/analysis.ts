@@ -146,6 +146,7 @@ function analyzeGamesWithPrecomputedData(
     mistakesByOpening: {},
     blundersByOpening: {},
     topBlunders: [],
+    topMistakes: [],
     verboseMovesByGame: new Map(),
     positionsByGame: new Map(),
     recurringPatterns: []
@@ -212,9 +213,25 @@ function analyzeGamesWithPrecomputedData(
       if (name === 'inaccuracy') {
         summary.total.inaccuracies += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          ...(centipawnLoss !== undefined && { centipawnLoss }),
+          kind: 'inaccuracy'
+        })
       } else if (name === 'mistake') {
         summary.total.mistakes += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          ...(centipawnLoss !== undefined && { centipawnLoss }),
+          kind: 'mistake'
+        })
       } else if (name === 'blunder') {
         summary.total.blunders += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
@@ -225,6 +242,14 @@ function analyzeGamesWithPrecomputedData(
           ply: plyValue,
           side: plyValue % 2 === 1 ? 'white' : 'black',
           ...(centipawnLoss !== undefined && { centipawnLoss })
+        })
+        summary.topMistakes.push({
+          gameId: String((game as any)?.id ?? ''),
+          moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
+          ...(centipawnLoss !== undefined && { centipawnLoss }),
+          kind: 'blunder'
         })
       }
     })
@@ -269,12 +294,36 @@ function analyzeGamesWithPrecomputedData(
             side: plyValue % 2 === 1 ? 'white' : 'black',
             ...(delta > 0 && { centipawnLoss: delta })
           })
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            ...(delta > 0 && { centipawnLoss: delta }),
+            kind: 'blunder'
+          })
         } else if (delta >= 150) {
           summary.total.mistakes += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            ...(delta > 0 && { centipawnLoss: delta }),
+            kind: 'mistake'
+          })
         } else if (delta >= 60) {
           summary.total.inaccuracies += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.topMistakes.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            ...(delta > 0 && { centipawnLoss: delta }),
+            kind: 'inaccuracy'
+          })
         }
       }
     }
@@ -314,6 +363,7 @@ function analyzeGamesWithPrecomputedData(
   console.log(`✅ Recurring patterns complete! Found ${summary.recurringPatterns.length} patterns`)
   
   summary.topBlunders.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  summary.topMistakes.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   
   // Convert Maps to objects for JSON serialization
   const verboseMovesObj: Record<string, any[]> = {}
