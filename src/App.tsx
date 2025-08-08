@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import UsernameForm from './components/UsernameForm'
 import Dashboard from './components/Dashboard'
 import fetchLichessGames, { LichessError, type LichessGame } from './lib/lichess'
@@ -14,6 +14,8 @@ export default function App() {
   const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; phase: string } | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const workerRef = useRef<Worker | null>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
     const fromPgn = (raw?: string, tag?: string): string | undefined => {
@@ -61,139 +63,29 @@ export default function App() {
     return best
   }
 
-  async function analyzeGamesWithProgress(games: LichessGame[], options: { onlyForUsername?: string } = {}) {
-    const total = games.length
-    let current = 0
-    const updateInterval = Math.max(1, Math.floor(total / 20)) // Update every 5% or at least every game
-    
-    setAnalysisProgress({ current: 0, total, phase: 'Analyzing games' })
-    
-    const summary: AnalysisSummary = {
-      total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
-      mistakesByOpening: {},
-      blundersByOpening: {},
-      topBlunders: [],
-    }
-    
-    const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
-    
-    for (const game of games) {
-      current += 1
-      if (current % updateInterval === 0) {
-        setAnalysisProgress({ current, total, phase: 'Analyzing games' })
-        // Yield to browser to allow progress update to render
-        await new Promise(resolve => setTimeout(resolve, 0))
+  const analyzeWithWorker = (games: LichessGame[], options: { onlyForUsername?: string } = {}) => {
+    return new Promise<AnalysisSummary>((resolve, reject) => {
+      if (!workerRef.current) {
+        workerRef.current = new Worker(new URL('./workers/analysis.worker.ts', import.meta.url), { type: 'module' })
       }
+
+      const worker = workerRef.current
       
-      const openingName = String((game as any)?.opening?.name ?? 'Unknown')
-      const analyzedMoves: any[] = Array.isArray((game as any)?.analysis)
-        ? ((game as any).analysis as any[])
-        : []
-      
-      const hasJudgments = analyzedMoves.some((mv) => mv?.judgment?.name)
-      
-      // Determine which side (white/black) the target username is playing in this game, if provided
-      let targetSide: 'white' | 'black' | null = null
-      if (normalizedTarget) {
-        const whiteName: string | undefined =
-          ((game as any)?.players?.white?.user?.name as string | undefined) ||
-          ((game as any)?.players?.white?.userId as string | undefined) ||
-          ((game as any)?.players?.white?.name as string | undefined) ||
-          ((game as any)?.white?.user?.name as string | undefined) ||
-          ((game as any)?.white?.name as string | undefined) ||
-          ((game as any)?.pgn?.raw && /\[White\s+"([^"]+)"\]/.exec((game as any).pgn.raw)?.[1])
-        const blackName: string | undefined =
-          ((game as any)?.players?.black?.user?.name as string | undefined) ||
-          ((game as any)?.players?.black?.userId as string | undefined) ||
-          ((game as any)?.players?.black?.name as string | undefined) ||
-          ((game as any)?.black?.user?.name as string | undefined) ||
-          ((game as any)?.black?.name as string | undefined) ||
-          ((game as any)?.pgn?.raw && /\[Black\s+"([^"]+)"\]/.exec((game as any).pgn.raw)?.[1])
-        if (typeof whiteName === 'string' && whiteName.trim().toLowerCase() === normalizedTarget) targetSide = 'white'
-        else if (typeof blackName === 'string' && blackName.trim().toLowerCase() === normalizedTarget) targetSide = 'black'
-        else targetSide = null
-      }
-      
-      analyzedMoves.forEach((mv: any, idx: number) => {
-        const judgment = mv?.judgment?.name as string | undefined
-        const centipawnLoss = mv?.judgment?.cp as number | undefined
-        if (!judgment) return
-        const plyValue: number = typeof mv?.ply === 'number' ? mv.ply : idx + 1
-        const moveNumber = Math.ceil(plyValue / 2)
-        
-        // If filtering by username, only include moves made by that side
-        if (targetSide) {
-          const isWhiteMove = (mv?.ply ?? idx + 1) % 2 === 1
-          if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) return
-        }
-        
-        const key = openingName
-        const name = judgment.toLowerCase()
-        if (name === 'inaccuracy') {
-          summary.total.inaccuracies += 1
-          summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
-        } else if (name === 'mistake') {
-          summary.total.mistakes += 1
-          summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
-        } else if (name === 'blunder') {
-          summary.total.blunders += 1
-          summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
-          summary.blundersByOpening[key] = (summary.blundersByOpening[key] ?? 0) + 1
-          summary.topBlunders.push({
-            gameId: String((game as any)?.id ?? ''),
-            moveNumber,
-            ply: plyValue,
-            side: plyValue % 2 === 1 ? 'white' : 'black',
-            centipawnLoss,
-          })
-        }
-      })
-      
-      if (!hasJudgments && analyzedMoves.length > 0) {
-        const evals: Array<{ cp?: number; mate?: number; ply?: number }> = analyzedMoves.map((m: any) => ({
-          cp: m?.eval?.cp ?? m?.judgment?.cp,
-          mate: m?.eval?.mate,
-          ply: m?.ply,
-        }))
-        for (let i = 1; i < evals.length; i++) {
-          const prev = evals[i - 1]
-          const curr = evals[i]
-          const delta = typeof prev.cp === 'number' && typeof curr.cp === 'number' ? Math.abs(curr.cp - prev.cp) : 0
-          const plyValue: number = typeof analyzedMoves[i]?.ply === 'number' ? analyzedMoves[i].ply : i + 1
-          const moveNumber = Math.ceil(plyValue / 2)
-          if (targetSide) {
-            const isWhiteMove = (analyzedMoves[i]?.ply ?? i + 1) % 2 === 1
-            if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) continue
-          }
-          if (delta >= 250) {
-            summary.total.blunders += 1
-            summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
-            summary.blundersByOpening[openingName] = (summary.blundersByOpening[openingName] ?? 0) + 1
-            summary.topBlunders.push({
-              gameId: String((game as any)?.id ?? ''),
-              moveNumber,
-              ply: plyValue,
-              side: plyValue % 2 === 1 ? 'white' : 'black',
-              centipawnLoss: delta,
-            })
-          } else if (delta >= 150) {
-            summary.total.mistakes += 1
-            summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
-          } else if (delta >= 60) {
-            summary.total.inaccuracies += 1
-            summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
-          }
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data.type === 'progress') {
+          setAnalysisProgress(event.data)
+        } else if (event.data.type === 'result') {
+          worker.removeEventListener('message', handleMessage)
+          resolve(event.data.summary)
+        } else if (event.data.type === 'error') {
+          worker.removeEventListener('message', handleMessage)
+          reject(new Error(event.data.error))
         }
       }
-    }
-    
-    summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
-    
-    // Show that we're now preparing the UI
-    setAnalysisProgress({ current: total, total, phase: 'Preparing results' })
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    return summary
+
+      worker.addEventListener('message', handleMessage)
+      worker.postMessage({ type: 'analyze', games, options })
+    })
   }
 
   const handleAnalyze = async (username?: string) => {
@@ -201,25 +93,28 @@ export default function App() {
     setError(null)
     setGames(null)
     setAnalysisProgress(null)
+    setIsAnalyzing(false)
     try {
       setSelectedUsername(username ?? null)
       if (uploadedGames && uploadedGames.length) {
         setGames(uploadedGames)
-        // Yield to the browser so loading UI can render before heavy analysis
-        await new Promise((resolve) => setTimeout(resolve, 0))
+        // Show immediate feedback
+        setIsAnalyzing(true)
         const detected = deriveUsernameFromGames(uploadedGames)
         setSelectedUsername(detected ?? null)
-        setSummary(await analyzeGamesWithProgress(uploadedGames, { onlyForUsername: detected }))
+        const result = await analyzeWithWorker(uploadedGames, { onlyForUsername: detected })
+        setSummary(result)
       } else {
         const abort = new AbortController()
         try {
           const data = await fetchLichessGames(username || '', { max: 2000, signal: abort.signal })
           setGames(data)
-          // Yield to paint spinner before analysis
-          await new Promise((resolve) => setTimeout(resolve, 0))
+          // Show immediate feedback
+          setIsAnalyzing(true)
           const detected = deriveUsernameFromGames(data)
           setSelectedUsername(detected ?? (username ?? null))
-          setSummary(await analyzeGamesWithProgress(data, { onlyForUsername: detected ?? username }))
+          const result = await analyzeWithWorker(data, { onlyForUsername: detected ?? username })
+          setSummary(result)
         } finally {
           abort.abort()
         }
@@ -229,6 +124,7 @@ export default function App() {
       setError(msg)
     } finally {
       setIsLoading(false)
+      setIsAnalyzing(false)
       setAnalysisProgress(null)
     }
   }
@@ -243,23 +139,36 @@ export default function App() {
         setIsLoading(true)
         setGames(null)
         setAnalysisProgress(null)
+        setIsAnalyzing(false)
         Promise.resolve()
-          .then(() => new Promise((r) => setTimeout(r, 0)))
           .then(async () => {
             const detected = deriveUsernameFromGames(uploaded)
             setSelectedUsername(detected ?? null)
             setGames(uploaded)
-            setSummary(await analyzeGamesWithProgress(uploaded, { onlyForUsername: detected }))
+            // Show immediate feedback
+            setIsAnalyzing(true)
+            const result = await analyzeWithWorker(uploaded, { onlyForUsername: detected })
+            setSummary(result)
           })
           .catch(() => {})
           .finally(() => {
             setIsLoading(false)
+            setIsAnalyzing(false)
             setAnalysisProgress(null)
           })
       }
     }
     window.addEventListener('pgnUploadAnalyzed', onUpload as EventListener)
     return () => window.removeEventListener('pgnUploadAnalyzed', onUpload as EventListener)
+  }, [])
+
+  // Cleanup worker on unmount
+  useEffect(() => {
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate()
+      }
+    }
   }, [])
 
   return (
@@ -277,20 +186,28 @@ export default function App() {
         </section>
 
         <div className="mt-6 min-h-[2rem]">
-          {isLoading && (
+          {isLoading && !isAnalyzing && (
             <div className="py-6">
               <DashboardSkeleton />
               <div className="flex items-center justify-center py-6">
-                <Spinner label="Analyzing your games…" />
+                <Spinner label="Loading games…" />
               </div>
             </div>
           )}
-          {!isLoading && error && (
+          {isAnalyzing && (
+            <div className="py-6">
+              <DashboardSkeleton />
+              <div className="flex items-center justify-center py-6">
+                <Spinner label="Analyzing games…" />
+              </div>
+            </div>
+          )}
+          {!isLoading && !isAnalyzing && error && (
             <p className="text-red-400" role="alert">
               {error}
             </p>
           )}
-          {!isLoading && !error && summary && (
+          {!isLoading && !isAnalyzing && !error && summary && (
             <>
               <div className="mb-6 rounded-lg border border-slate-800 bg-slate-800/60 p-4 text-left">
                 <p className="text-gray-200">Analyzed {games?.length ?? 0} games.</p>
