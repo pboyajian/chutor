@@ -3,11 +3,13 @@ import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import UsernameForm from './components/UsernameForm'
 import fetchLichessGames, { LichessError, type LichessGame } from './lib/lichess'
+import analyzeGames, { type AnalysisSummary } from './lib/analysis'
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [games, setGames] = useState<LichessGame[] | null>(null)
+  const [summary, setSummary] = useState<AnalysisSummary | null>(null)
 
   const handleAnalyze = async (username: string) => {
     setIsLoading(true)
@@ -16,6 +18,7 @@ export default function App() {
     try {
       const data = await fetchLichessGames(username)
       setGames(data)
+      setSummary(analyzeGames(data))
     } catch (err) {
       const msg = err instanceof LichessError ? err.message : 'Unexpected error fetching games'
       setError(msg)
@@ -29,6 +32,7 @@ export default function App() {
       const uploaded = e.detail?.games as LichessGame[] | undefined
       if (uploaded && uploaded.length) {
         setGames(uploaded)
+        setSummary(analyzeGames(uploaded))
         setError(null)
       }
     }
@@ -58,7 +62,14 @@ export default function App() {
           </p>
         )}
         {!isLoading && !error && games && (
-          <p className="text-green-700">Success! Fetched {games.length} games.</p>
+          <div className="text-green-700">
+            <p>Success! Fetched {games.length} games.</p>
+            {summary && (
+              <p className="mt-2 text-sm text-gray-700">
+                Blunders: {summary.total.blunders}, Mistakes: {summary.total.mistakes}, Inaccuracies: {summary.total.inaccuracies}
+              </p>
+            )}
+          </div>
         )}
       </div>
     </div>
