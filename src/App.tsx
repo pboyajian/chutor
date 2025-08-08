@@ -22,11 +22,20 @@ export default function App() {
       setSelectedUsername(username)
       if (uploadedGames && uploadedGames.length) {
         setGames(uploadedGames)
+        // Yield to the browser so loading UI can render before heavy analysis
+        await new Promise((resolve) => setTimeout(resolve, 0))
         setSummary(analyzeGames(uploadedGames, { onlyForUsername: username }))
       } else {
-        const data = await fetchLichessGames(username)
-        setGames(data)
-        setSummary(analyzeGames(data, { onlyForUsername: username }))
+        const abort = new AbortController()
+        try {
+          const data = await fetchLichessGames(username, { max: 2000, signal: abort.signal })
+          setGames(data)
+          // Yield to paint spinner before analysis
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          setSummary(analyzeGames(data, { onlyForUsername: username }))
+        } finally {
+          abort.abort()
+        }
       }
     } catch (err) {
       const msg = err instanceof LichessError ? err.message : 'Unexpected error fetching games'
