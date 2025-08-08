@@ -81,7 +81,9 @@ self.onmessage = (evt: MessageEvent) => {
 
   let processed = 0
 
-  for (const [gameId, group] of mistakesByGame.entries()) {
+  const allEntries = Array.from(mistakesByGame.entries())
+  const total = allEntries.reduce((acc, [, group]) => acc + group.length, 0)
+  for (const [gameId, group] of allEntries) {
     const game = gameMap[gameId]
     if (!game) continue
     const opening = String(game?.opening?.name ?? 'Unknown')
@@ -137,8 +139,8 @@ self.onmessage = (evt: MessageEvent) => {
     }
 
     processed += group.length
-    if (processed % 100 === 0) {
-      ;(self as any).postMessage({ type: 'progress', data: { processed } })
+    if (processed % 200 === 0) {
+      ;(self as any).postMessage({ type: 'progress', data: { processed, total } })
     }
   }
 

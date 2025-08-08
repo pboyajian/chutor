@@ -31,17 +31,21 @@ export default function MistakeList({
   const [isPreparing, setIsPreparing] = useState(false)
   const [preparedItems, setPreparedItems] = useState<Array<any>>([])
   const [recurringPatterns, setRecurringPatterns] = useState<Array<any>>([])
+  const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null)
 
   // Kick off worker when inputs change
   useEffect(() => {
     if (!summary?.topMistakes?.length || !games?.length) {
       setPreparedItems([])
       setRecurringPatterns([])
+      setIsPreparing(false)
+      setProgress(null)
       return
     }
     setIsPreparing(true)
     setPreparedItems([])
     setRecurringPatterns([])
+    setProgress({ processed: 0, total: summary.topMistakes.length })
 
     // Terminate any existing worker
     if (workerRef.current) {
@@ -55,21 +59,31 @@ export default function MistakeList({
     w.onmessage = (evt: MessageEvent) => {
       const { type, data } = evt.data || {}
       if (type === 'progress') {
-        // optional: could surface progress later
+        setProgress((prev) => ({ processed: data?.processed ?? (prev?.processed ?? 0), total: prev?.total ?? summary.topMistakes.length }))
         return
       }
       if (type === 'result') {
         setPreparedItems(data.items || [])
         setRecurringPatterns(data.recurringPatterns || [])
         setIsPreparing(false)
+        setProgress(null)
         w.terminate()
         workerRef.current = null
       }
     }
+    w.onerror = () => {
+      setIsPreparing(false)
+      setProgress(null)
+      try { w.terminate() } catch {}
+      workerRef.current = null
+    }
 
+    const MAX_ITEMS = 3000
+    const limited = summary.topMistakes.slice(0, MAX_ITEMS)
+    setProgress({ processed: 0, total: limited.length })
     const payload = {
       games,
-      mistakes: summary.topMistakes.map((m) => ({ gameId: m.gameId, moveNumber: m.moveNumber, ply: m.ply, centipawnLoss: m.centipawnLoss, kind: m.kind })),
+      mistakes: limited.map((m) => ({ gameId: m.gameId, moveNumber: m.moveNumber, ply: m.ply, centipawnLoss: m.centipawnLoss, kind: m.kind })),
     }
     w.postMessage(payload)
 
@@ -112,7 +126,9 @@ export default function MistakeList({
     <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-fade-in-up">
       <h2 className="mb-3 text-lg font-semibold text-gray-100">Recurring mistakes by opening and move</h2>
       {isPreparing ? (
-        <p className="text-sm text-gray-400 mb-3">Preparing blunder details…</p>
+        <p className="text-sm text-gray-400 mb-3">
+          Preparing mistake details… {progress ? `(${progress.processed}/${progress.total})` : ''}
+        </p>
       ) : recurringPatterns.length === 0 ? (
         <p className="text-sm text-gray-400 mb-3">No recurring mistakes found.</p>
       ) : (
