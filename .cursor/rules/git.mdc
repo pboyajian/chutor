@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+Create a new git branch for the feature you are working on
+the branch should be built off develop
+name should be agent/<feature-description>
+feel free to add and commit as appropriate, but never push without permission

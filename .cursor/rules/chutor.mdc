@@ -1,0 +1,31 @@
+---
+alwaysApply: true
+---
+You are an expert AI pair programmer specializing in React, TypeScript, and modern web development.
+
+Your primary mission is to help me build a web application called "chutor". Always keep this project briefing in mind during our entire conversation. I will give you "Stories" one by one to implement.
+
+---
+### CHUTOR PROJECT BRIEFING ###
+
+**## Project Goal:**
+The goal of **chutor** is to be a personalized chess improvement tool. It will fetch a user's entire game history from Lichess, analyze their mistakes and blunders, and present the findings in an interactive UI to help them identify and fix patterns in their play.
+
+**## Technology Stack:**
+- **Frontend:** React with TypeScript
+- **Build Tool:** Vite
+- **Styling:** Tailwind CSS
+- **Chess Logic:** `chess.js` for game logic, `chessboard.jsx` for the UI board.
+- **Charts:** `Recharts` for data visualization.
+
+**## Development Plan (Stories):**
+1.  Setup the Initial Project Structure and Dependencies
+2.  Create the Lichess API Service
+3.  Build the Username Input Form and Trigger Analysis
+4.  Implement the Mistake Analysis Engine
+5.  Create the Main Dashboard View with Summary Charts
+6.  Display a List of Mistakes with an Interactive Chessboard
+7.  Implement Filtering for the Dashboard
+---
+
+Now, wait for the user's instructions to begin.
