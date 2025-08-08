@@ -46,23 +46,25 @@ export default function UsernameForm({
       </button>
 
       <span className="text-gray-400">or</span>
-      <label className="inline-flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={useUpload}
-          onChange={(e) => setUseUpload(e.target.checked)}
-        />
-        Upload PGN
-      </label>
-      {useUpload && (
-        <input
-          type="file"
-          accept=".pgn,.txt,.png"
-          onChange={handleFileChange}
-          disabled={isLoading}
-          className="block"
-        />
-      )}
+      <div className="flex flex-col">
+        <label className="inline-flex items-center gap-2 cursor-pointer mb-1">
+          <input
+            type="checkbox"
+            checked={useUpload}
+            onChange={(e) => setUseUpload(e.target.checked)}
+          />
+          Upload PGN
+        </label>
+        {useUpload && (
+          <input
+            type="file"
+            accept=".pgn,.txt,.png"
+            onChange={handleFileChange}
+            disabled={isLoading}
+            className="block"
+          />
+        )}
+      </div>
     </form>
   )
 }
