@@ -16,7 +16,6 @@ export default function App() {
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; phase: string } | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
-  const workerRef = useRef<Worker | null>(null)
   const debugScrollRef = useRef<HTMLDivElement>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
@@ -67,11 +66,8 @@ export default function App() {
 
   const analyzeWithWorker = (games: LichessGame[], options: { onlyForUsername?: string } = {}) => {
     return new Promise<AnalysisSummary>((resolve, reject) => {
-      if (!workerRef.current) {
-        workerRef.current = new Worker(new URL('./workers/analysis.worker.ts', import.meta.url), { type: 'module' })
-      }
-
-      const worker = workerRef.current
+      // Create a new worker for each analysis to avoid conflicts
+      const worker = new Worker(new URL('./workers/analysis.worker.ts', import.meta.url), { type: 'module' })
       
       const handleMessage = (event: MessageEvent) => {
         if (event.data.type === 'progress') {
@@ -88,9 +84,11 @@ export default function App() {
           })
         } else if (event.data.type === 'result') {
           worker.removeEventListener('message', handleMessage)
+          worker.terminate() // Clean up the worker
           resolve(event.data.summary)
         } else if (event.data.type === 'error') {
           worker.removeEventListener('message', handleMessage)
+          worker.terminate() // Clean up the worker
           reject(new Error(event.data.error))
         }
       }
@@ -173,15 +171,6 @@ export default function App() {
     }
     window.addEventListener('pgnUploadAnalyzed', onUpload as EventListener)
     return () => window.removeEventListener('pgnUploadAnalyzed', onUpload as EventListener)
-  }, [])
-
-  // Cleanup worker on unmount
-  useEffect(() => {
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate()
-      }
-    }
   }, [])
 
   // Auto-scroll debug logs to bottom

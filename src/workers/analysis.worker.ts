@@ -264,7 +264,6 @@ async function analyzeGamesWithProgress(
   
   // Show that we're now preparing the UI
   postMessage({ type: 'progress', current: total, total, phase: 'Preparing results' })
-  await new Promise(resolve => setTimeout(resolve, 100))
   
   const totalDuration = performance.now() - totalStartTime
   log('Analysis completed', { 
