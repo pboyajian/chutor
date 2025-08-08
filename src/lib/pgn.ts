@@ -6,52 +6,62 @@ function extractHeader(tag: string, text: string): string | undefined {
 }
 
 function parseEvalTokens(movesSection: string) {
-  // Lichess PGN embeds evaluations as comments like: { [%eval 0.56] } or { [%eval #-3] }
-  const evalRegex = /\{\s*\[%eval\s+([^\]\s]+)\s*\]\s*\}/g
+  // Single-pass tokenizer that increments ply on SAN tokens and attaches evals
+  // to the ply that just occurred. This prevents misalignment between evals
+  // and moves.
   const evals: Array<{ cp?: number; mate?: number; ply: number }> = []
 
-  // Very lightweight ply counter: increment on SAN move tokens
-  // SAN tokens roughly: piece moves, captures, checks, mates, promotions, castles
-  const tokens = movesSection
-    .replace(/\{[^}]*\}/g, ' ') // strip comments for ply counting
-    .split(/\s+/)
-    .filter(Boolean)
-
+  // Matches either a comment block or the next non-space token
+  const tokenRegex = /\{[^}]*\}|\S+/g
+  let match: RegExpExecArray | null
   let plyCounter = 0
-  const isMoveToken = (t: string) => !/^\d+\.|^\d+\.\.\./.test(t) && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t)
 
-  // Walk once to build a map of where evals appear relative to tokens
-  // Then do a second pass with regex to capture eval numbers in order and assign ply order
-  for (const tok of tokens) {
-    if (isMoveToken(tok)) plyCounter += 1
+  const isMoveToken = (t: string): boolean => {
+    // Exclude move numbers (e.g., 12. or 12...)
+    if (/^\d+\.(\.\.)?$/.test(t)) return false
+    // Exclude results
+    if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t)) return false
+    // Exclude NAGs like $1
+    if (/^\$\d+$/.test(t)) return false
+    // Exclude pure parentheses from variations
+    if (t === '(' || t === ')') return false
+    // Some exports glue parentheses to tokens; strip them for detection purposes
+    const stripped = t.replace(/[()]+/g, '')
+    if (!stripped) return false
+    // If it still looks like a number token, ignore
+    if (/^\d+\.(\.\.)?$/.test(stripped)) return false
+    // Anything else treat as a move token (SAN is quite permissive)
+    return true
   }
 
-  // Second pass: assign sequential ply indices for each eval we encounter
-  let evalIndex = 0
-  const seq: Array<{ cp?: number; mate?: number; ply: number }> = []
-  movesSection.replace(evalRegex, (_m) => {
-    evalIndex += 1
-    // Map 1-based index to ply; use evalIndex as an approximation
-    seq.push({ ply: evalIndex })
-    return _m
-  })
+  while ((match = tokenRegex.exec(movesSection))) {
+    const tok = match[0]
 
-  // Now actually extract numeric values and attach to seq entries
-  let i = 0
-  let m: RegExpExecArray | null
-  while ((m = evalRegex.exec(movesSection))) {
-    const raw = m[1]
-    const target = seq[i++]
-    if (!target) break
-    if (raw.startsWith('#')) {
-      const mateNum = Number(raw.slice(1).replace('+', ''))
-      target.mate = isNaN(mateNum) ? undefined : mateNum
-    } else {
-      const cp = Math.round(Number(raw) * 100)
-      target.cp = isNaN(cp) ? undefined : cp
+    // Comment block: look for [%eval ...]
+    if (tok.startsWith('{')) {
+      const em = /\[\s*%eval\s+([^\]\s]+)\s*\]/i.exec(tok)
+      if (em) {
+        const raw = em[1]
+        const record: { cp?: number; mate?: number; ply: number } = { ply: plyCounter }
+        if (raw.startsWith('#')) {
+          const mateNum = Number(raw.slice(1).replace('+', ''))
+          if (!Number.isNaN(mateNum)) record.mate = mateNum
+        } else {
+          const cp = Math.round(Number(raw) * 100)
+          if (!Number.isNaN(cp)) record.cp = cp
+        }
+        evals.push(record)
+      }
+      continue
+    }
+
+    // Non-comment token: increment ply if it appears to be a SAN move token
+    if (isMoveToken(tok)) {
+      plyCounter += 1
     }
   }
-  return seq
+
+  return evals
 }
 
 export function parsePgnTextToGames(text: string, max?: number): LichessGame[] {

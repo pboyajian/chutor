@@ -95,16 +95,34 @@ export function analyzeGames(
         mate: m?.eval?.mate,
         ply: m?.ply,
       }))
+
+      // Mover-centric centipawn loss: compare eval after move (i)
+      // versus eval before move (i-1), normalized to the mover's perspective.
+      const lossForMover = (prev: any, curr: any, plyIndex: number): number => {
+        // Skip if mate scores are involved
+        if (typeof prev?.cp !== 'number' || typeof curr?.cp !== 'number') return 0
+        if (typeof prev?.mate === 'number' || typeof curr?.mate === 'number') return 0
+        const isWhiteMove = (plyIndex % 2) === 1 // 1-based ply: odd=white, even=black
+        const prevWhite = prev.cp
+        const currWhite = curr.cp
+        const deltaWhite = currWhite - prevWhite
+        // For white, loss is a drop in white eval; for black, loss is a drop in black eval = increase in white eval
+        const loss = isWhiteMove ? Math.max(0, -deltaWhite) : Math.max(0, deltaWhite)
+        return loss
+      }
+
       for (let i = 1; i < evals.length; i++) {
         const prev = evals[i - 1]
         const curr = evals[i]
-        const delta = typeof prev.cp === 'number' && typeof curr.cp === 'number' ? Math.abs(curr.cp - prev.cp) : 0
         const plyValue: number = typeof analyzedMoves[i]?.ply === 'number' ? analyzedMoves[i].ply : i + 1
         const moveNumber = Math.ceil(plyValue / 2)
+
         if (targetSide) {
           const isWhiteMove = (analyzedMoves[i]?.ply ?? i + 1) % 2 === 1
           if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) continue
         }
+
+        const delta = lossForMover(prev, curr, plyValue)
         if (delta >= 250) {
           summary.total.blunders += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
