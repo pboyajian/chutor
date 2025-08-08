@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import analyzeGames, { type AnalysisSummary } from '../lib/analysis'
 import type { LichessGame } from '../lib/lichess'
 import MistakeList from './MistakeList'
@@ -21,13 +21,26 @@ const COLORS = ['#60a5fa', '#22d3ee', '#a78bfa']
 
 type ChartView = 'pie' | 'bar'
 
-export default function Dashboard({ summary, games = [] }: { summary: AnalysisSummary; games?: LichessGame[] }) {
+export default function Dashboard({
+  summary,
+  games = [],
+  filterUsername,
+}: {
+  summary: AnalysisSummary
+  games?: LichessGame[]
+  filterUsername?: string
+}) {
   const [view, setView] = useState<ChartView>('pie')
   const [selectedFen, setSelectedFen] = useState<string>(
     'rn1qkbnr/pp3ppp/2p5/3pp3/8/1P2PN2/PBPP1PPP/RN1QKB1R w KQkq - 0 5',
   )
   const [selectedMeta, setSelectedMeta] = useState<{ gameId: string; moveNumber: number } | null>(null)
   const [selectedOpening, setSelectedOpening] = useState<string | null>(null)
+  
+  // Reset selected opening when games change
+  useEffect(() => {
+    setSelectedOpening(null)
+  }, [games])
   const orientation: 'white' | 'black' = useMemo(() => {
     const parts = selectedFen.split(' ')
     return parts[1] === 'b' ? 'black' : 'white'
@@ -39,9 +52,10 @@ export default function Dashboard({ summary, games = [] }: { summary: AnalysisSu
       const name = String(g?.opening?.name ?? 'Unknown')
       counts[name] = (counts[name] ?? 0) + 1
     }
+    console.log('Dashboard: Available openings from loaded games:', counts)
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name)
+      .map(([name, count]) => ({ name, count }))
   }, [games])
 
   const filteredGames = useMemo(() => {
@@ -49,7 +63,10 @@ export default function Dashboard({ summary, games = [] }: { summary: AnalysisSu
     return (games as any[]).filter((g) => String(g?.opening?.name ?? 'Unknown') === selectedOpening)
   }, [games, selectedOpening])
 
-  const activeSummary = useMemo(() => analyzeGames(filteredGames), [filteredGames])
+  const activeSummary = useMemo(
+    () => analyzeGames(filteredGames, { onlyForUsername: filterUsername }),
+    [filteredGames, filterUsername],
+  )
 
   const pieData = [
     { name: 'Blunders', value: activeSummary.total.blunders },
@@ -155,8 +172,8 @@ export default function Dashboard({ summary, games = [] }: { summary: AnalysisSu
           >
             <option value="">All openings</option>
             {openings.map((op) => (
-              <option key={op} value={op}>
-                {op}
+              <option key={op.name} value={op.name}>
+                {op.name} ({op.count})
               </option>
             ))}
           </select>

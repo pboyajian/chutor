@@ -5,23 +5,22 @@ export default function UsernameForm({
   onAnalyze,
   isLoading = false,
 }: {
-  onAnalyze: (username: string) => void
+  onAnalyze: (username?: string) => void
   isLoading?: boolean
-}) {
+ }) {
   const [username, setUsername] = useState('')
   const [useUpload, setUseUpload] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const value = username.trim()
-    if (!value) return
-    onAnalyze(value)
+    onAnalyze(value || undefined)
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const games = await pgnFileToGames(file, 24000)
+    const games = await pgnFileToGames(file, 1000)
     const event = new CustomEvent('pgnUploadAnalyzed', { detail: { games } })
     window.dispatchEvent(event)
   }
