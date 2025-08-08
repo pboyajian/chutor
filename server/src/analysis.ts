@@ -1,6 +1,4 @@
-import { LichessGame, AnalysisSummary } from './types'
-
-export function extractGameNames(game: any): { white?: string; black?: string } {
+function extractGameNames(game: any): { white?: string; black?: string } {
   const fromPgn = (raw?: string, tag?: string): string | undefined => {
     if (!raw || !tag) return undefined
     const m = new RegExp(`\\[${tag}\\s+"([^"]+)"\\]`).exec(raw)
@@ -29,7 +27,7 @@ export function extractGameNames(game: any): { white?: string; black?: string } 
   return result
 }
 
-export function deriveUsernameFromGames(all: LichessGame[]): string | undefined {
+function deriveUsernameFromGames(all: any[]): string | undefined {
   const counts = new Map<string, number>()
   for (const g of all as any[]) {
     const names = extractGameNames(g)
@@ -51,11 +49,11 @@ export function deriveUsernameFromGames(all: LichessGame[]): string | undefined 
   return best
 }
 
-export function analyzeGames(
-  games: LichessGame[],
+function analyzeGames(
+  games: any[],
   options: { onlyForUsername?: string } = {},
-): AnalysisSummary {
-  const summary: AnalysisSummary = {
+): any {
+  const summary: any = {
     total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
     mistakesByOpening: {},
     blundersByOpening: {},
@@ -169,6 +167,8 @@ export function analyzeGames(
     }
   }
 
-  summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  summary.topBlunders.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   return summary
 }
+
+module.exports = { extractGameNames, deriveUsernameFromGames, analyzeGames }
