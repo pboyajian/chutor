@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import type { AnalysisSummary } from '../lib/analysis'
 import type { LichessGame } from '../lib/lichess'
 import { Chess } from 'chess.js'
@@ -22,265 +22,118 @@ export default function MistakeList({
   onSelect: (fen: string, meta: MistakeItemMeta) => void
   selected?: MistakeItemMeta | null
 }) {
-  // Cache per-game verbose moves (SAN) for quick played move lookups
-  const verboseByGame = useMemo(() => {
-    const startTime = performance.now()
-    console.log('MistakeList: Starting verbose moves computation', { gameCount: games.length })
-    
-    const map = new Map<string, Array<{ san: string; from: string; to: string; promotion?: string }>>()
-    for (const g of games as any[]) {
-      const id = String(g?.id ?? '')
-      if (!id) continue
-      try {
-        const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
-        if (!pgnRaw) continue
-        
-        const engine = new Chess()
-        engine.loadPgn(pgnRaw)
-        const verbose = engine.history({ verbose: true }) as Array<{
-          san: string
-          from: string
-          to: string
-          promotion?: string
-        }>
-        map.set(id, verbose)
-      } catch (error) {
-        console.warn('Failed to parse game moves:', id, error)
-        map.set(id, [])
-      }
-    }
-    
-    const duration = performance.now() - startTime
-    console.log('MistakeList: Verbose moves computation completed', { duration, gameCount: games.length })
-    return map
-  }, [games])
-
-  // Cache positions at each ply to avoid repeated chess.js operations
-  const positionsByGame = useMemo(() => {
-    const startTime = performance.now()
-    console.log('MistakeList: Starting position caching', { gameCount: games.length })
-    
-    const map = new Map<string, Map<number, Chess>>()
-    for (const g of games as any[]) {
-      const id = String(g?.id ?? '')
-      if (!id) continue
-      
-      try {
-        const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
-        if (!pgnRaw) continue
-        
-        const engine = new Chess()
-        engine.loadPgn(pgnRaw)
-        const verbose = engine.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>
-        
-        const positions = new Map<number, Chess>()
-        positions.set(0, new Chess()) // Starting position
-        
-        // Build positions incrementally
-        const temp = new Chess()
-        for (let i = 0; i < verbose.length; i++) {
-          const move = verbose[i]
-          temp.move({ from: move.from, to: move.to, promotion: move.promotion })
-          positions.set(i + 1, new Chess(temp.fen()))
-        }
-        
-        map.set(id, positions)
-      } catch (error) {
-        console.warn('Failed to cache positions for game:', id, error)
-        map.set(id, new Map())
-      }
-    }
-    
-    const duration = performance.now() - startTime
-    console.log('MistakeList: Position caching completed', { duration, gameCount: games.length })
-    return map
-  }, [games])
   const [sortMode, setSortMode] = useState<'recurrence' | 'move'>('recurrence')
   const [page, setPage] = useState(1)
   const pageSize = 20
-  function positionSignature(fen: string): string {
-    const parts = fen.split(' ')
-    // Use piece placement + active color. Ignore castling rights, en passant, clocks.
-    return `${parts[0]} ${parts[1]}`
-  }
 
-  // Group recurring patterns by normalized position signature across all mistake types
-  const { recurringPatterns, moveCounts } = useMemo(() => {
-    const startTime = performance.now()
-    console.log('MistakeList: Starting recurring patterns computation', { blunderCount: summary.topBlunders.length })
-    
-    // Group by (opening, played SAN of the blunder move)
-    const counts: Record<string, number> = {}
-    const samples: Record<string, { gameId: string; moveNumber: number; opening: string; move: string }> = {}
-    const map: Record<string, any> = {}
-    for (const g of games as any[]) {
-      const id = String(g?.id ?? '')
-      if (id) map[id] = g
+  // Worker state
+  const workerRef = useRef<Worker | null>(null)
+  const [isPreparing, setIsPreparing] = useState(false)
+  const [preparedItems, setPreparedItems] = useState<Array<any>>([])
+  const [recurringPatterns, setRecurringPatterns] = useState<Array<any>>([])
+
+  // Kick off worker when inputs change
+  useEffect(() => {
+    if (!summary?.topBlunders?.length || !games?.length) {
+      setPreparedItems([])
+      setRecurringPatterns([])
+      return
     }
-    for (const b of summary.topBlunders) {
-      const game: any = map[b.gameId]
-      if (!game) continue
-      const opening = String(game?.opening?.name ?? 'Unknown')
-      const gid = String(game?.id ?? '')
-      const verbose = verboseByGame.get(gid) ?? []
-      const plyIndex = Math.max(0, Math.min(verbose.length - 1, b.moveNumber * 2 - 2))
-      const san = verbose[plyIndex]?.san ?? '—'
-      const key = `${opening}||${san}`
-      counts[key] = (counts[key] ?? 0) + 1
-      if (!samples[key]) samples[key] = { gameId: gid, moveNumber: b.moveNumber, opening, move: san }
+    setIsPreparing(true)
+    setPreparedItems([])
+    setRecurringPatterns([])
+
+    // Terminate any existing worker
+    if (workerRef.current) {
+      workerRef.current.terminate()
+      workerRef.current = null
     }
-    const recurring = Object.keys(counts)
-      .map((k) => ({ key: k, count: counts[k], opening: samples[k].opening, move: samples[k].move, sample: { gameId: samples[k].gameId, moveNumber: samples[k].moveNumber } }))
-      .sort((a, b) => b.count - a.count)
-    
-    const duration = performance.now() - startTime
-    console.log('MistakeList: Recurring patterns computation completed', { duration, patternCount: recurring.length })
-    return { recurringPatterns: recurring, moveCounts: counts }
-  }, [games, summary.topBlunders, verboseByGame])
+
+    const w = new Worker(new URL('../workers/mistakeDetails.worker.ts', import.meta.url), { type: 'module' })
+    workerRef.current = w
+
+    w.onmessage = (evt: MessageEvent) => {
+      const { type, data } = evt.data || {}
+      if (type === 'progress') {
+        // optional: could surface progress later
+        return
+      }
+      if (type === 'result') {
+        setPreparedItems(data.items || [])
+        setRecurringPatterns(data.recurringPatterns || [])
+        setIsPreparing(false)
+        w.terminate()
+        workerRef.current = null
+      }
+    }
+
+    const payload = {
+      games,
+      blunders: summary.topBlunders.map((b) => ({ gameId: b.gameId, moveNumber: b.moveNumber, ply: b.ply, centipawnLoss: b.centipawnLoss })),
+    }
+    w.postMessage(payload)
+
+    return () => {
+      try {
+        w.terminate()
+      } catch {}
+      workerRef.current = null
+    }
+  }, [games, summary])
 
   const items = useMemo(() => {
-    const startTime = performance.now()
-    console.log('MistakeList: Starting items computation', { blunderCount: summary.topBlunders.length })
-    
-    const map: Record<string, LichessGame> = {}
-    for (const g of games) {
-      const id = String((g as any)?.id ?? '')
-      if (id) map[id] = g
-    }
-    const computePlayedSan = (game: any, moveNumber: number): string | undefined => {
-      try {
-        const gid = String(game?.id ?? '')
-        const verbose = verboseByGame.get(gid) ?? []
-        const plyIndex = Math.max(0, Math.min(verbose.length - 1, moveNumber * 2 - 2))
-        return verbose[plyIndex]?.san
-      } catch {
-        return undefined
-      }
-    }
+    const base = preparedItems.map((it) => ({
+      gameId: it.gameId,
+      moveNumber: it.moveNumber,
+      centipawnLoss: it.centipawnLoss,
+      playedSan: it.playedSan as string | undefined,
+      bestSan: it.bestSan as string | undefined,
+      opening: String(it.opening ?? 'Unknown'),
+      fen: it.fen as string,
+      game: (games as any[]).find((g) => String((g as any)?.id ?? '') === String(it.gameId)),
+      frequency: 1,
+    }))
 
-    const extractBestMoveSan = (game: any, moveNumber: number): string | undefined => {
-      try {
-        const analyzed = Array.isArray(game?.analysis) ? (game.analysis as any[]) : []
-        const isWhiteMove = (moveNumber * 2 - 1) % 2 === 1
-        const targetPly = isWhiteMove ? moveNumber * 2 - 1 : moveNumber * 2
-        const mv = analyzed.find((m) => typeof m?.ply === 'number' && m.ply === targetPly)
-        if (!mv) return undefined
-        
-        // If UCI best move available
-        const uci: string | undefined = (mv?.best as string) || (mv?.uciBest as string) || undefined
-        if (uci && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) {
-          // Use cached position instead of rebuilding
-          const gid = String(game?.id ?? '')
-          const positions = positionsByGame.get(gid)
-          if (positions) {
-            const prevPly = targetPly - 1
-            const prevPosition = positions.get(prevPly)
-            if (prevPosition) {
-              const move = {
-                from: uci.slice(0, 2),
-                to: uci.slice(2, 4),
-                promotion: uci.length === 5 ? (uci[4] as 'q' | 'r' | 'b' | 'n') : undefined,
-              }
-              try {
-                const res = prevPosition.move(move as any)
-                if (res && typeof (res as any).san === 'string') return (res as any).san as string
-              } catch {
-                // ignore invalid moves
-              }
-            }
-          }
-        }
-
-        const comment: string | undefined = (mv?.judgment?.comment as string | undefined) || (mv?.comment as string | undefined)
-        if (comment) {
-          // Try to find a legal SAN token in the comment using cached position
-          const gid = String(game?.id ?? '')
-          const positions = positionsByGame.get(gid)
-          if (positions) {
-            const prevPly = targetPly - 1
-            const prevPosition = positions.get(prevPly)
-            if (prevPosition) {
-              // Extract SAN-like tokens and test legality
-              const sanCandidates = (comment.match(/(O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)/g) || [])
-              for (const cand of sanCandidates) {
-                try {
-                  const res = prevPosition.move(cand)
-                  if (res) return (res as any).san as string
-                } catch {
-                  // ignore invalid moves
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('Error extracting best move SAN:', error)
-      }
-      return undefined
-    }
-    // attach group frequency for sorting: by position signature, ignoring type/move order
-    const withMeta = summary.topBlunders
-      .filter((b) => b.gameId && map[b.gameId])
-      .map((b) => {
-        const game: any = map[b.gameId]
-        const opening = String(game?.opening?.name ?? 'Unknown')
-        const san = computePlayedSan(game, b.moveNumber) ?? '—'
-        const key = `${opening}||${san}`
-        const frequency = moveCounts[key] ?? 1
-        const playedSan = computePlayedSan(game, b.moveNumber)
-        const bestSan = extractBestMoveSan(game, b.moveNumber)
-        return { ...b, game, frequency, playedSan, bestSan }
-      }) as Array<MistakeItemMeta & { game: any; frequency: number; playedSan?: string; bestSan?: string }>
-
-    if (sortMode === 'move') {
-      return withMeta.sort((a, b) => a.moveNumber - b.moveNumber)
-    }
-    const result = withMeta.sort((a, b) => b.frequency - a.frequency)
-    
-    const duration = performance.now() - startTime
-    console.log('MistakeList: Items computation completed', { duration, itemCount: result.length })
-    return result
-  }, [games, summary.topBlunders, moveCounts, sortMode, verboseByGame, positionsByGame])
+    if (sortMode === 'move') return base.sort((a, b) => a.moveNumber - b.moveNumber)
+    return base.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  }, [preparedItems, sortMode, games])
 
   const pagedItems = useMemo(() => {
     const start = (page - 1) * pageSize
     return items.slice(start, start + pageSize)
   }, [items, page])
 
-  function computeFenAtMove(_game: any, _moveNumber: number): string {
-    // Replaced by gameIndex-based fast path above
-    return new Chess().fen()
+  function computeFenAtMoveFromPrepared(item: any): string {
+    return item.fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
   }
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-fade-in-up">
       <h2 className="mb-3 text-lg font-semibold text-gray-100">Recurring mistakes by opening and move</h2>
-      {recurringPatterns.length === 0 ? (
+      {isPreparing ? (
+        <p className="text-sm text-gray-400 mb-3">Preparing blunder details…</p>
+      ) : recurringPatterns.length === 0 ? (
         <p className="text-sm text-gray-400 mb-3">No recurring mistakes found.</p>
       ) : (
         <ul className="mb-4 space-y-1">
-          {recurringPatterns.slice(0, 10).map((p) => {
-            const sampleGameId = p.sample?.gameId
-            return (
-              <li key={`${p.key}`}>
-                <button
-                  type="button"
-                  className="text-left w-full px-2 py-1 rounded-md hover:bg-slate-700/60 transition flex items-center justify-between gap-3 text-gray-200"
-                  onClick={() => {
-                    const game: any = (games as any[]).find((g) => String((g as any)?.id ?? '') === sampleGameId)
-                    if (!game) return
-                    const moveNumber = p.sample?.moveNumber ?? 1
-                    onSelect(new Chess().fen(), { gameId: sampleGameId ?? '', moveNumber })
-                  }}
-                >
-                  <span className="truncate mr-2">
-                    <span className="font-medium text-gray-100">{p.opening}</span> — {p.move}
-                  </span>
-                  <span className="text-sm tabular-nums bg-slate-700 text-gray-200 px-2 py-0.5 rounded-md">×{p.count}</span>
-                </button>
-              </li>
-            )
-          })}
+          {recurringPatterns.slice(0, 10).map((p) => (
+            <li key={`${p.key}`}>
+              <button
+                type="button"
+                className="text-left w-full px-2 py-1 rounded-md hover:bg-slate-700/60 transition flex items-center justify-between gap-3 text-gray-200"
+                onClick={() => {
+                  const item = preparedItems.find((i) => i.gameId === p.sample?.gameId && i.moveNumber === p.sample?.moveNumber)
+                  if (!item) return
+                  onSelect(computeFenAtMoveFromPrepared(item), { gameId: item.gameId, moveNumber: item.moveNumber })
+                }}
+              >
+                <span className="truncate mr-2">
+                  <span className="font-medium text-gray-100">{p.opening}</span> — {p.move}
+                </span>
+                <span className="text-sm tabular-nums bg-slate-700 text-gray-200 px-2 py-0.5 rounded-md">×{p.count}</span>
+              </button>
+            </li>
+          ))}
         </ul>
       )}
 
@@ -302,17 +155,18 @@ export default function MistakeList({
           </select>
         </div>
       </div>
-      {items.length === 0 && <p className="text-sm text-gray-400">No blunders identified.</p>}
+      {isPreparing && <p className="text-sm text-gray-400">Preparing blunders…</p>}
+      {!isPreparing && items.length === 0 && <p className="text-sm text-gray-400">No blunders identified.</p>}
       <ul role="list" className="divide-y divide-slate-700 text-left">
         {pagedItems.map((item) => {
-          const opening = String((item.game?.opening?.name as string) ?? 'Unknown')
+          const opening = String((item.game as any)?.opening?.name ?? item.opening ?? 'Unknown')
           const isSelected = selected?.gameId === item.gameId && selected?.moveNumber === item.moveNumber
           return (
             <li key={`${item.gameId}-${item.moveNumber}`} className={`py-2 ${isSelected ? 'bg-blue-950/40' : ''}`}>
               <button
                 type="button"
                 onClick={() => {
-                  const fen = computeFenAtMove(item.game, item.moveNumber)
+                  const fen = computeFenAtMoveFromPrepared(item)
                   onSelect(fen, { gameId: item.gameId, moveNumber: item.moveNumber, centipawnLoss: item.centipawnLoss })
                 }}
                 className="w-full text-left flex items-center justify-between gap-3 px-2 hover:bg-slate-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/60 rounded-md transition text-gray-200"
@@ -341,7 +195,7 @@ export default function MistakeList({
           )
         })}
       </ul>
-      {items.length > pageSize && (
+      {!isPreparing && items.length > pageSize && (
         <div className="mt-3 flex items-center justify-between">
           <button
             type="button"
@@ -351,14 +205,14 @@ export default function MistakeList({
           >
             Previous
           </button>
-          <div className="text-xs text-gray-400">
-            Page {page} / {Math.ceil(items.length / pageSize)}
-          </div>
+          <span className="text-xs text-gray-400">
+            Page {page} of {Math.ceil(items.length / pageSize)}
+          </span>
           <button
             type="button"
             className="px-2 py-1 text-xs rounded border border-slate-700 text-gray-200 disabled:opacity-50"
-            onClick={() => setPage((p) => (p * pageSize < items.length ? p + 1 : p))}
-            disabled={page * pageSize >= items.length}
+            onClick={() => setPage((p) => Math.min(Math.ceil(items.length / pageSize), p + 1))}
+            disabled={page >= Math.ceil(items.length / pageSize)}
           >
             Next
           </button>
