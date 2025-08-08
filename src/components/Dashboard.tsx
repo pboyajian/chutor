@@ -31,46 +31,57 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
     .slice(0, 5)
     .map(([opening, count]) => ({ opening, count }))
 
-  function wrapLabelToLines(label: string, maxCharsPerLine = 16, maxLines = 3): string[] {
+  function wrapLabelToLines(label: string, maxCharsPerLine = 16): string[] {
     const normalized = label.replace(/:\s*/g, ': ').replace(/\s+/g, ' ').trim()
     const words = normalized.split(' ')
     const lines: string[] = []
     let current = ''
+    const pushCurrent = () => {
+      if (current) {
+        lines.push(current)
+        current = ''
+      }
+    }
+    const pushChunks = (word: string) => {
+      if (word.length <= maxCharsPerLine) {
+        current = word
+        return
+      }
+      for (let i = 0; i < word.length; i += maxCharsPerLine) {
+        const chunk = word.slice(i, i + maxCharsPerLine)
+        if (!current) current = chunk
+        else {
+          pushCurrent()
+          current = chunk
+        }
+      }
+    }
     for (const word of words) {
       const next = current ? `${current} ${word}` : word
       if (next.length <= maxCharsPerLine) {
         current = next
       } else {
-        if (current) lines.push(current)
-        current = word
-      }
-      if (lines.length === maxLines - 1 && current.length > maxCharsPerLine) {
-        // Hard wrap very long single tokens
-        lines.push(current.slice(0, maxCharsPerLine - 1) + '…')
-        return lines
+        pushCurrent()
+        pushChunks(word)
       }
     }
-    if (current) lines.push(current)
-    if (lines.length > maxLines) {
-      const truncated = lines.slice(0, maxLines)
-      const last = truncated[maxLines - 1]
-      truncated[maxLines - 1] = last.length >= maxCharsPerLine ? last.slice(0, maxCharsPerLine - 1) + '…' : last + '…'
-      return truncated
-    }
+    pushCurrent()
     return lines
   }
 
   function OpeningTick({ x, y, payload }: { x: number; y: number; payload: { value: string } }) {
-    const lines = wrapLabelToLines(payload.value, 18, 3)
+    const lines = wrapLabelToLines(payload.value, 18)
     const lineHeight = 14
     return (
-      <text x={x} y={y + 8} textAnchor="middle" fill="#374151">
-        {lines.map((line, i) => (
-          <tspan key={i} x={x} dy={i === 0 ? 0 : lineHeight}>
-            {line}
-          </tspan>
-        ))}
-      </text>
+      <g transform={`translate(${x},${y}) rotate(15)`}>
+        <text x={0} y={8} textAnchor="start" fill="#374151">
+          {lines.map((line, i) => (
+            <tspan key={i} x={0} dy={i === 0 ? 0 : lineHeight}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+      </g>
     )
   }
 
@@ -123,11 +134,11 @@ export default function Dashboard({ summary }: { summary: AnalysisSummary }) {
       {view === 'bar' && (
         <div className="rounded border border-gray-200 p-4 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">Top 5 Openings with Most Blunders</h2>
-          <div className="h-[28rem]">
+          <div className="h-[30rem]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 20, left: 40, bottom: 80 }}>
+              <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 20, left: 60, bottom: 140 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="opening" interval={0} height={80} tickMargin={8} tick={<OpeningTick x={0} y={0} payload={{ value: '' }} />} />
+                <XAxis dataKey="opening" interval={0} height={120} tickMargin={12} tick={<OpeningTick x={0} y={0} payload={{ value: '' }} />} />
                 <YAxis allowDecimals={false} />
                 <RechartsTooltip />
                 <Bar dataKey="count" fill="#ef4444" />
