@@ -22,36 +22,26 @@ export default function MistakeList({
   onSelect: (fen: string, meta: MistakeItemMeta) => void
   selected?: MistakeItemMeta | null
 }) {
-  // Precompute per-game move list and FENs after each ply for fast lookup
-  const gameIndex = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        verbose: Array<{ san: string; from: string; to: string; promotion?: string }>
-        fensAfterPly: string[]
-      }
-    >()
-    const extractHeader = (tag: string, text?: string): string | undefined => {
-      if (!text) return undefined
-      const m = new RegExp(`\\[${tag}\\s+"([^"]+)"\\]`).exec(text)
-      return m?.[1]
-    }
+  // Cache per-game verbose moves (SAN) for quick played move lookups
+  const verboseByGame = useMemo(() => {
+    const map = new Map<string, Array<{ san: string; from: string; to: string; promotion?: string }>>()
     for (const g of games as any[]) {
       const id = String(g?.id ?? '')
       if (!id) continue
-      const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
-      const initialFen: string | undefined = g?.initialFen || extractHeader('FEN', pgnRaw)
-      const tmp = new Chess(initialFen)
-      if (pgnRaw) tmp.loadPgn(pgnRaw)
-      const verbose = tmp.history({ verbose: true }) as Array<{ san: string; from: string; to: string; promotion?: string }>
-      // Build FEN after each ply in one forward pass
-      const engine = new Chess(initialFen)
-      const fensAfterPly: string[] = []
-      for (const mv of verbose) {
-        engine.move({ from: mv.from, to: mv.to, promotion: mv.promotion })
-        fensAfterPly.push(engine.fen())
+      try {
+        const pgnRaw: string | undefined = (g?.pgn?.raw as string) ?? (typeof g?.pgn === 'string' ? g.pgn : undefined)
+        const engine = new Chess()
+        if (pgnRaw) engine.loadPgn(pgnRaw)
+        const verbose = engine.history({ verbose: true }) as Array<{
+          san: string
+          from: string
+          to: string
+          promotion?: string
+        }>
+        map.set(id, verbose)
+      } catch {
+        map.set(id, [])
       }
-      map.set(id, { verbose, fensAfterPly })
     }
     return map
   }, [games])
@@ -65,52 +55,32 @@ export default function MistakeList({
   }
 
   // Group recurring patterns by normalized position signature across all mistake types
-  const { recurringPatterns, signatureCounts } = useMemo(() => {
+  const { recurringPatterns, moveCounts } = useMemo(() => {
+    // Group by (opening, played SAN of the blunder move)
     const counts: Record<string, number> = {}
-    const openingCounts: Record<string, Record<string, number>> = {}
-    const samples: Record<string, { gameId: string; moveNumber: number }> = {}
-
-    const getFenFor = (game: any, moveNumber: number): string => {
-      const gid = String(game?.id ?? '')
-      const data = gameIndex.get(gid)
-      const targetPly = Math.max(1, moveNumber * 2 - 1)
-      const fen = data?.fensAfterPly?.[targetPly - 1]
-      return fen || new Chess().fen()
-    }
-
+    const samples: Record<string, { gameId: string; moveNumber: number; opening: string; move: string }> = {}
+    const map: Record<string, any> = {}
     for (const g of games as any[]) {
-      const opening = String(g?.opening?.name ?? 'Unknown')
-      const gameId = String(g?.id ?? '')
-      const analyzed = Array.isArray(g?.analysis) ? (g.analysis as any[]) : []
-      for (const mv of analyzed) {
-        const name: string | undefined = mv?.judgment?.name
-        const ply: number | undefined = mv?.ply
-        if (!name || typeof ply !== 'number') continue
-        const moveNumber = Math.ceil(ply / 2)
-        const fen = getFenFor(g, moveNumber)
-        const sig = positionSignature(fen)
-        counts[sig] = (counts[sig] ?? 0) + 1
-        if (!openingCounts[sig]) openingCounts[sig] = {}
-        openingCounts[sig][opening] = (openingCounts[sig][opening] ?? 0) + 1
-        if (!samples[sig]) samples[sig] = { gameId, moveNumber }
-      }
+      const id = String(g?.id ?? '')
+      if (id) map[id] = g
     }
-
+    for (const b of summary.topBlunders) {
+      const game: any = map[b.gameId]
+      if (!game) continue
+      const opening = String(game?.opening?.name ?? 'Unknown')
+      const gid = String(game?.id ?? '')
+      const verbose = verboseByGame.get(gid) ?? []
+      const plyIndex = Math.max(0, Math.min(verbose.length - 1, b.moveNumber * 2 - 2))
+      const san = verbose[plyIndex]?.san ?? '—'
+      const key = `${opening}||${san}`
+      counts[key] = (counts[key] ?? 0) + 1
+      if (!samples[key]) samples[key] = { gameId: gid, moveNumber: b.moveNumber, opening, move: san }
+    }
     const recurring = Object.keys(counts)
-      .map((sig) => {
-        const openings = openingCounts[sig] ?? {}
-        const topOpening = Object.entries(openings).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Various'
-        return {
-          signature: sig,
-          opening: topOpening,
-          count: counts[sig],
-          sample: samples[sig],
-        }
-      })
+      .map((k) => ({ key: k, count: counts[k], opening: samples[k].opening, move: samples[k].move, sample: { gameId: samples[k].gameId, moveNumber: samples[k].moveNumber } }))
       .sort((a, b) => b.count - a.count)
-
-    return { recurringPatterns: recurring, signatureCounts: counts }
-  }, [games])
+    return { recurringPatterns: recurring, moveCounts: counts }
+  }, [games, summary.topBlunders, verboseByGame])
 
   const items = useMemo(() => {
     const map: Record<string, LichessGame> = {}
@@ -121,8 +91,7 @@ export default function MistakeList({
     const computePlayedSan = (game: any, moveNumber: number): string | undefined => {
       try {
         const gid = String(game?.id ?? '')
-        const data = gameIndex.get(gid)
-        const verbose = data?.verbose ?? []
+        const verbose = verboseByGame.get(gid) ?? []
         const plyIndex = Math.max(0, Math.min(verbose.length - 1, moveNumber * 2 - 2))
         return verbose[plyIndex]?.san
       } catch {
@@ -203,14 +172,10 @@ export default function MistakeList({
       .filter((b) => b.gameId && map[b.gameId])
       .map((b) => {
         const game: any = map[b.gameId]
-        const fen = (() => {
-          const gid = String(game?.id ?? '')
-          const data = gameIndex.get(gid)
-          const targetPly = Math.max(1, b.moveNumber * 2 - 1)
-          return data?.fensAfterPly?.[targetPly - 1] || new Chess().fen()
-        })()
-        const sig = positionSignature(fen)
-        const frequency = signatureCounts[sig] ?? 1
+        const opening = String(game?.opening?.name ?? 'Unknown')
+        const san = computePlayedSan(game, b.moveNumber) ?? '—'
+        const key = `${opening}||${san}`
+        const frequency = moveCounts[key] ?? 1
         const playedSan = computePlayedSan(game, b.moveNumber)
         const bestSan = extractBestMoveSan(game, b.moveNumber)
         return { ...b, game, frequency, playedSan, bestSan }
@@ -220,7 +185,7 @@ export default function MistakeList({
       return withMeta.sort((a, b) => a.moveNumber - b.moveNumber)
     }
     return withMeta.sort((a, b) => b.frequency - a.frequency)
-  }, [games, summary.topBlunders, signatureCounts, sortMode])
+  }, [games, summary.topBlunders, moveCounts, sortMode, verboseByGame])
 
   const pagedItems = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -234,7 +199,7 @@ export default function MistakeList({
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-fade-in-up">
-      <h2 className="mb-3 text-lg font-semibold text-gray-100">Recurring mistakes by position</h2>
+      <h2 className="mb-3 text-lg font-semibold text-gray-100">Recurring mistakes by opening and move</h2>
       {recurringPatterns.length === 0 ? (
         <p className="text-sm text-gray-400 mb-3">No recurring mistakes found.</p>
       ) : (
@@ -242,7 +207,7 @@ export default function MistakeList({
           {recurringPatterns.slice(0, 10).map((p) => {
             const sampleGameId = p.sample?.gameId
             return (
-              <li key={`${p.signature}`}>
+              <li key={`${p.key}`}>
                 <button
                   type="button"
                   className="text-left w-full px-2 py-1 rounded-md hover:bg-slate-700/60 transition flex items-center justify-between gap-3 text-gray-200"
@@ -250,12 +215,11 @@ export default function MistakeList({
                     const game: any = (games as any[]).find((g) => String((g as any)?.id ?? '') === sampleGameId)
                     if (!game) return
                     const moveNumber = p.sample?.moveNumber ?? 1
-                    const fen = computeFenAtMove(game, moveNumber)
-                    onSelect(fen, { gameId: sampleGameId ?? '', moveNumber })
+                    onSelect(new Chess().fen(), { gameId: sampleGameId ?? '', moveNumber })
                   }}
                 >
                   <span className="truncate mr-2">
-                    <span className="font-medium text-gray-100">{p.opening}</span> — Common position
+                    <span className="font-medium text-gray-100">{p.opening}</span> — {p.move}
                   </span>
                   <span className="text-sm tabular-nums bg-slate-700 text-gray-200 px-2 py-0.5 rounded-md">×{p.count}</span>
                 </button>
