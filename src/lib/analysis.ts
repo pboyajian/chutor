@@ -8,7 +8,7 @@ export interface AnalysisSummary {
   }
   mistakesByOpening: Record<string, number>
   blundersByOpening: Record<string, number>
-  topBlunders: Array<{ gameId: string; moveNumber: number; centipawnLoss?: number }>
+  topBlunders: Array<{ gameId: string; moveNumber: number; ply: number; side: 'white' | 'black'; centipawnLoss?: number }>
 }
 
 export function analyzeGames(
@@ -58,7 +58,8 @@ export function analyzeGames(
       const judgment = mv?.judgment?.name as string | undefined
       const centipawnLoss = mv?.judgment?.cp as number | undefined
       if (!judgment) return
-      const moveNumber = typeof mv?.ply === 'number' ? Math.ceil(mv.ply / 2) : idx + 1
+      const plyValue: number = typeof mv?.ply === 'number' ? mv.ply : idx + 1
+      const moveNumber = Math.ceil(plyValue / 2)
 
       // If filtering by username, only include moves made by that side
       if (targetSide) {
@@ -81,6 +82,8 @@ export function analyzeGames(
         summary.topBlunders.push({
           gameId: String((game as any)?.id ?? ''),
           moveNumber,
+          ply: plyValue,
+          side: plyValue % 2 === 1 ? 'white' : 'black',
           centipawnLoss,
         })
       }
@@ -96,7 +99,8 @@ export function analyzeGames(
         const prev = evals[i - 1]
         const curr = evals[i]
         const delta = typeof prev.cp === 'number' && typeof curr.cp === 'number' ? Math.abs(curr.cp - prev.cp) : 0
-        const moveNumber = typeof analyzedMoves[i]?.ply === 'number' ? Math.ceil(analyzedMoves[i].ply / 2) : i + 1
+        const plyValue: number = typeof analyzedMoves[i]?.ply === 'number' ? analyzedMoves[i].ply : i + 1
+        const moveNumber = Math.ceil(plyValue / 2)
         if (targetSide) {
           const isWhiteMove = (analyzedMoves[i]?.ply ?? i + 1) % 2 === 1
           if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) continue
@@ -105,7 +109,13 @@ export function analyzeGames(
           summary.total.blunders += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
           summary.blundersByOpening[openingName] = (summary.blundersByOpening[openingName] ?? 0) + 1
-          summary.topBlunders.push({ gameId: String((game as any)?.id ?? ''), moveNumber, centipawnLoss: delta })
+          summary.topBlunders.push({
+            gameId: String((game as any)?.id ?? ''),
+            moveNumber,
+            ply: plyValue,
+            side: plyValue % 2 === 1 ? 'white' : 'black',
+            centipawnLoss: delta,
+          })
         } else if (delta >= 150) {
           summary.total.mistakes += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1

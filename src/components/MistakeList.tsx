@@ -7,6 +7,8 @@ export interface MistakeItemMeta {
   gameId: string
   moveNumber: number
   centipawnLoss?: number
+  ply?: number
+  side?: 'white' | 'black'
 }
 
 export default function MistakeList({
@@ -324,8 +326,12 @@ export default function MistakeList({
                   <div className="text-sm text-gray-400 truncate max-w-[32ch]">{opening}</div>
                   <div className="text-xs text-gray-400 mt-0.5">
                     <span className="text-gray-300">Played:</span> {item.playedSan ?? '—'}
-                    <span className="mx-2">•</span>
-                    <span className="text-gray-300">Best:</span> {item.bestSan ?? '—'}
+                    {item.bestSan && (
+                      <>
+                        <span className="mx-2">•</span>
+                        <span className="text-gray-300">Best:</span> {item.bestSan}
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">
