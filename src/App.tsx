@@ -16,6 +16,7 @@ export default function App() {
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; phase: string } | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
+  const [debugPanelVisible, setDebugPanelVisible] = useState(true)
   const debugScrollRef = useRef<HTMLDivElement>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
@@ -249,20 +250,28 @@ export default function App() {
             </div>
           </div>
         )}
-        {debugLogs.length > 0 && (
+        {debugLogs.length > 0 && debugPanelVisible && (
           <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg z-50 max-w-md max-h-96 overflow-hidden">
             <div className="flex justify-between items-center mb-2">
               <div className="text-sm font-semibold text-gray-200">Debug Logs ({debugLogs.length})</div>
-              <button 
-                onClick={() => {
-                  if (debugScrollRef.current) {
-                    debugScrollRef.current.scrollTop = debugScrollRef.current.scrollHeight
-                  }
-                }}
-                className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-gray-300"
-              >
-                Scroll to Bottom
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    if (debugScrollRef.current) {
+                      debugScrollRef.current.scrollTop = debugScrollRef.current.scrollHeight
+                    }
+                  }}
+                  className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-gray-300"
+                >
+                  Scroll to Bottom
+                </button>
+                <button 
+                  onClick={() => setDebugPanelVisible(false)}
+                  className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-gray-300"
+                >
+                  Minimize
+                </button>
+              </div>
             </div>
             <div ref={debugScrollRef} className="space-y-1 text-xs overflow-y-auto max-h-80" style={{ scrollbarWidth: 'thin' }}>
               {debugLogs.map((log, index) => (
@@ -276,6 +285,16 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {debugLogs.length > 0 && !debugPanelVisible && (
+          <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-lg z-50">
+            <button 
+              onClick={() => setDebugPanelVisible(true)}
+              className="text-xs text-gray-300 hover:text-white"
+            >
+              Show Debug Logs ({debugLogs.length})
+            </button>
           </div>
         )}
       </main>

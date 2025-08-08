@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import analyzeGames, { type AnalysisSummary } from '../lib/analysis'
 import type { LichessGame } from '../lib/lichess'
 import MistakeList from './MistakeList'
@@ -36,6 +36,11 @@ export default function Dashboard({
   )
   const [selectedMeta, setSelectedMeta] = useState<{ gameId: string; moveNumber: number } | null>(null)
   const [selectedOpening, setSelectedOpening] = useState<string | null>(null)
+  
+  // Reset selected opening when games change
+  useEffect(() => {
+    setSelectedOpening(null)
+  }, [games])
   const orientation: 'white' | 'black' = useMemo(() => {
     const parts = selectedFen.split(' ')
     return parts[1] === 'b' ? 'black' : 'white'
@@ -47,9 +52,10 @@ export default function Dashboard({
       const name = String(g?.opening?.name ?? 'Unknown')
       counts[name] = (counts[name] ?? 0) + 1
     }
+    console.log('Dashboard: Available openings from loaded games:', counts)
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name)
+      .map(([name, count]) => ({ name, count }))
   }, [games])
 
   const filteredGames = useMemo(() => {
@@ -166,8 +172,8 @@ export default function Dashboard({
           >
             <option value="">All openings</option>
             {openings.map((op) => (
-              <option key={op} value={op}>
-                {op}
+              <option key={op.name} value={op.name}>
+                {op.name} ({op.count})
               </option>
             ))}
           </select>
