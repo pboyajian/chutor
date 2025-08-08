@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import viteLogo from '/public/vite.svg'
 import UsernameForm from './components/UsernameForm'
+import Dashboard from './components/Dashboard'
 import fetchLichessGames, { LichessError, type LichessGame } from './lib/lichess'
 import analyzeGames, { type AnalysisSummary } from './lib/analysis'
 
@@ -61,15 +62,16 @@ export default function App() {
             {error}
           </p>
         )}
-        {!isLoading && !error && games && (
-          <div className="text-green-700">
-            <p>Success! Fetched {games.length} games.</p>
-            {summary && (
+        {!isLoading && !error && summary && (
+          <>
+            <div className="text-green-700">
+              <p>Success! Fetched {games?.length ?? 0} games.</p>
               <p className="mt-2 text-sm text-gray-700">
                 Blunders: {summary.total.blunders}, Mistakes: {summary.total.mistakes}, Inaccuracies: {summary.total.inaccuracies}
               </p>
-            )}
-          </div>
+            </div>
+            <Dashboard summary={summary} />
+          </>
         )}
       </div>
     </div>

@@ -7,6 +7,7 @@ export interface AnalysisSummary {
     blunders: number
   }
   mistakesByOpening: Record<string, number>
+  blundersByOpening: Record<string, number>
   topBlunders: Array<{ gameId: string; moveNumber: number; centipawnLoss?: number }>
 }
 
@@ -14,6 +15,7 @@ export function analyzeGames(games: LichessGame[]): AnalysisSummary {
   const summary: AnalysisSummary = {
     total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
     mistakesByOpening: {},
+    blundersByOpening: {},
     topBlunders: [],
   }
 
@@ -42,6 +44,7 @@ export function analyzeGames(games: LichessGame[]): AnalysisSummary {
       } else if (name === 'blunder') {
         summary.total.blunders += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        summary.blundersByOpening[key] = (summary.blundersByOpening[key] ?? 0) + 1
         summary.topBlunders.push({
           gameId: String((game as any)?.id ?? ''),
           moveNumber,
@@ -64,6 +67,7 @@ export function analyzeGames(games: LichessGame[]): AnalysisSummary {
         if (delta >= 250) {
           summary.total.blunders += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          summary.blundersByOpening[openingName] = (summary.blundersByOpening[openingName] ?? 0) + 1
           summary.topBlunders.push({ gameId: String((game as any)?.id ?? ''), moveNumber, centipawnLoss: delta })
         } else if (delta >= 150) {
           summary.total.mistakes += 1
