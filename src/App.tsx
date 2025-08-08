@@ -13,7 +13,7 @@ export default function App() {
   const [summary, setSummary] = useState<AnalysisSummary | null>(null)
   const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
-  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number } | null>(null)
+  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; phase: string } | null>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
     const fromPgn = (raw?: string, tag?: string): string | undefined => {
@@ -28,17 +28,15 @@ export default function App() {
         (game?.players?.white?.name as string | undefined) ||
         (game?.white?.user?.name as string | undefined) ||
         (game?.white?.name as string | undefined) ||
-        extractGameNames['pgnWhite']) ?? extractGameNames['noop']
+        fromPgn(pgnRaw, 'White'))
     const black =
       ((game?.players?.black?.user?.name as string | undefined) ||
         (game?.players?.black?.userId as string | undefined) ||
         (game?.players?.black?.name as string | undefined) ||
         (game?.black?.user?.name as string | undefined) ||
         (game?.black?.name as string | undefined) ||
-        extractGameNames['pgnBlack']) ?? extractGameNames['noop']
-    const pgnWhite = fromPgn(pgnRaw, 'White')
-    const pgnBlack = fromPgn(pgnRaw, 'Black')
-    return { white: white || pgnWhite, black: black || pgnBlack }
+        fromPgn(pgnRaw, 'Black'))
+    return { white, black }
   }
 
   function deriveUsernameFromGames(all: LichessGame[]): string | undefined {
@@ -68,6 +66,8 @@ export default function App() {
     let current = 0
     const updateInterval = Math.max(1, Math.floor(total / 20)) // Update every 5% or at least every game
     
+    setAnalysisProgress({ current: 0, total, phase: 'Analyzing games' })
+    
     const summary: AnalysisSummary = {
       total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
       mistakesByOpening: {},
@@ -80,7 +80,7 @@ export default function App() {
     for (const game of games) {
       current += 1
       if (current % updateInterval === 0) {
-        setAnalysisProgress({ current, total })
+        setAnalysisProgress({ current, total, phase: 'Analyzing games' })
         // Yield to browser to allow progress update to render
         await new Promise(resolve => setTimeout(resolve, 0))
       }
@@ -188,6 +188,11 @@ export default function App() {
     }
     
     summary.topBlunders.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+    
+    // Show that we're now preparing the UI
+    setAnalysisProgress({ current: total, total, phase: 'Preparing results' })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
     return summary
   }
 
@@ -208,7 +213,7 @@ export default function App() {
       } else {
         const abort = new AbortController()
         try {
-          const data = await fetchLichessGames(username, { max: 2000, signal: abort.signal })
+          const data = await fetchLichessGames(username || '', { max: 2000, signal: abort.signal })
           setGames(data)
           // Yield to paint spinner before analysis
           await new Promise((resolve) => setTimeout(resolve, 0))
@@ -300,7 +305,7 @@ export default function App() {
         {analysisProgress && (
           <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 shadow-lg z-50">
             <div className="text-sm text-gray-200">
-              Analyzing games... {analysisProgress.current} / {analysisProgress.total}
+              {analysisProgress.phase}... {analysisProgress.current} / {analysisProgress.total}
             </div>
             <div className="w-full bg-slate-700 rounded-full h-2 mt-2">
               <div 
