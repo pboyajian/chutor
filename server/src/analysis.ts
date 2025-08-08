@@ -235,18 +235,29 @@ function analyzeGamesWithPrecomputedData(
         mate: m?.eval?.mate,
         ply: m?.ply,
       }))
+
+      const lossForMover = (prev: any, curr: any, plyIndex: number): number => {
+        if (typeof prev?.cp !== 'number' || typeof curr?.cp !== 'number') return 0
+        if (typeof prev?.mate === 'number' || typeof curr?.mate === 'number') return 0
+        const isWhiteMove = (plyIndex % 2) === 1
+        const prevWhite = prev.cp
+        const currWhite = curr.cp
+        const deltaWhite = currWhite - prevWhite
+        const loss = isWhiteMove ? Math.max(0, -deltaWhite) : Math.max(0, deltaWhite)
+        return loss
+      }
+
       for (let i = 1; i < evals.length; i++) {
         const prev = evals[i - 1]
         const curr = evals[i]
         if (!prev || !curr) continue
-        
-        const delta = typeof prev.cp === 'number' && typeof curr.cp === 'number' ? Math.abs(curr.cp - prev.cp) : 0
         const plyValue: number = typeof analyzedMoves[i]?.ply === 'number' ? analyzedMoves[i].ply : i + 1
         const moveNumber = Math.ceil(plyValue / 2)
         if (targetSide) {
           const isWhiteMove = (analyzedMoves[i]?.ply ?? i + 1) % 2 === 1
           if ((targetSide === 'white' && !isWhiteMove) || (targetSide === 'black' && isWhiteMove)) continue
         }
+        const delta = lossForMover(prev, curr, plyValue)
         if (delta >= 250) {
           summary.total.blunders += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
