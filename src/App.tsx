@@ -14,17 +14,67 @@ export default function App() {
   const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
 
-  const handleAnalyze = async (username: string) => {
+  function extractGameNames(game: any): { white?: string; black?: string } {
+    const fromPgn = (raw?: string, tag?: string): string | undefined => {
+      if (!raw || !tag) return undefined
+      const m = new RegExp(`\\[${tag}\\s+"([^"]+)"\\]`).exec(raw)
+      return m?.[1]
+    }
+    const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
+    const white =
+      ((game?.players?.white?.user?.name as string | undefined) ||
+        (game?.players?.white?.userId as string | undefined) ||
+        (game?.players?.white?.name as string | undefined) ||
+        (game?.white?.user?.name as string | undefined) ||
+        (game?.white?.name as string | undefined) ||
+        extractGameNames['pgnWhite']) ?? extractGameNames['noop']
+    const black =
+      ((game?.players?.black?.user?.name as string | undefined) ||
+        (game?.players?.black?.userId as string | undefined) ||
+        (game?.players?.black?.name as string | undefined) ||
+        (game?.black?.user?.name as string | undefined) ||
+        (game?.black?.name as string | undefined) ||
+        extractGameNames['pgnBlack']) ?? extractGameNames['noop']
+    const pgnWhite = fromPgn(pgnRaw, 'White')
+    const pgnBlack = fromPgn(pgnRaw, 'Black')
+    return { white: white || pgnWhite, black: black || pgnBlack }
+  }
+
+  function deriveUsernameFromGames(all: LichessGame[]): string | undefined {
+    const counts = new Map<string, number>()
+    for (const g of all as any[]) {
+      const names = extractGameNames(g)
+      const set = new Set<string>()
+      for (const name of [names.white, names.black]) {
+        if (typeof name === 'string' && name.trim()) set.add(name.trim().toLowerCase())
+      }
+      for (const n of set) counts.set(n, (counts.get(n) ?? 0) + 1)
+    }
+    let best: string | undefined
+    let bestCount = 0
+    for (const [n, c] of counts.entries()) {
+      if (c > bestCount) {
+        best = n
+        bestCount = c
+      }
+    }
+    if (best && bestCount === all.length) return best
+    return best
+  }
+
+  const handleAnalyze = async (username?: string) => {
     setIsLoading(true)
     setError(null)
     setGames(null)
     try {
-      setSelectedUsername(username)
+      setSelectedUsername(username ?? null)
       if (uploadedGames && uploadedGames.length) {
         setGames(uploadedGames)
         // Yield to the browser so loading UI can render before heavy analysis
         await new Promise((resolve) => setTimeout(resolve, 0))
-        setSummary(analyzeGames(uploadedGames, { onlyForUsername: username }))
+        const detected = deriveUsernameFromGames(uploadedGames)
+        setSelectedUsername(detected ?? null)
+        setSummary(analyzeGames(uploadedGames, { onlyForUsername: detected }))
       } else {
         const abort = new AbortController()
         try {
@@ -32,7 +82,9 @@ export default function App() {
           setGames(data)
           // Yield to paint spinner before analysis
           await new Promise((resolve) => setTimeout(resolve, 0))
-          setSummary(analyzeGames(data, { onlyForUsername: username }))
+          const detected = deriveUsernameFromGames(data)
+          setSelectedUsername(detected ?? (username ?? null))
+          setSummary(analyzeGames(data, { onlyForUsername: detected ?? username }))
         } finally {
           abort.abort()
         }
@@ -49,9 +101,21 @@ export default function App() {
     const onUpload = (e: any) => {
       const uploaded = e.detail?.games as LichessGame[] | undefined
       if (uploaded && uploaded.length) {
-        // Store uploaded games but do not analyze until user clicks Analyze
+        // Auto analyze for uploaded PGNs by detecting username from games
         setUploadedGames(uploaded)
         setError(null)
+        setIsLoading(true)
+        setGames(null)
+        Promise.resolve()
+          .then(() => new Promise((r) => setTimeout(r, 0)))
+          .then(() => {
+            const detected = deriveUsernameFromGames(uploaded)
+            setSelectedUsername(detected ?? null)
+            setGames(uploaded)
+            setSummary(analyzeGames(uploaded, { onlyForUsername: detected }))
+          })
+          .catch(() => {})
+          .finally(() => setIsLoading(false))
       }
     }
     window.addEventListener('pgnUploadAnalyzed', onUpload as EventListener)

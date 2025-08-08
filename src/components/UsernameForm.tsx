@@ -5,17 +5,16 @@ export default function UsernameForm({
   onAnalyze,
   isLoading = false,
 }: {
-  onAnalyze: (username: string) => void
+  onAnalyze: (username?: string) => void
   isLoading?: boolean
-}) {
+ }) {
   const [username, setUsername] = useState('')
   const [useUpload, setUseUpload] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const value = username.trim()
-    if (!value) return
-    onAnalyze(value)
+    onAnalyze(value || undefined)
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
