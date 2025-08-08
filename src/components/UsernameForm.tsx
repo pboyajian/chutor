@@ -21,7 +21,7 @@ export default function UsernameForm({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const games = await pgnFileToGames(file, 10000)
+    const games = await pgnFileToGames(file, 24000)
     const event = new CustomEvent('pgnUploadAnalyzed', { detail: { games } })
     window.dispatchEvent(event)
   }
