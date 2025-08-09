@@ -34,6 +34,7 @@ export default function Dashboard({
   const [selectedFen, setSelectedFen] = useState<string>(
     'rn1qkbnr/pp3ppp/2p5/3pp3/8/1P2PN2/PBPP1PPP/RN1QKB1R w KQkq - 0 5',
   )
+  const [copied, setCopied] = useState<boolean>(false)
   const [selectedMeta, setSelectedMeta] = useState<{ gameId: string; moveNumber: number } | null>(null)
   const [selectedOpening, setSelectedOpening] = useState<string | null>(null)
   
@@ -63,13 +64,21 @@ export default function Dashboard({
     return (games as any[]).filter((g) => String(g?.opening?.name ?? 'Unknown') === selectedOpening)
   }, [games, selectedOpening])
 
-  const activeSummary = useMemo(
-    () => analyzeGames(filteredGames, { onlyForUsername: filterUsername }),
-    [filteredGames, filterUsername],
-  )
+  const activeSummary = useMemo(() => {
+    // For "All openings", use the provided summary to keep numbers consistent
+    // with the backend/worker totals (and avoid recomputation differences).
+    if (!selectedOpening) return summary
+    return analyzeGames(filteredGames, { onlyForUsername: filterUsername })
+  }, [selectedOpening, summary, filteredGames, filterUsername])
+
+  const blunderTotalForPie = useMemo(() => {
+    if (selectedOpening) return activeSummary.total.blunders
+    const byOpening = activeSummary.blundersByOpening || {}
+    return Object.values(byOpening).reduce((sum, n) => sum + (typeof n === 'number' ? n : 0), 0)
+  }, [activeSummary, selectedOpening])
 
   const pieData = [
-    { name: 'Blunders', value: activeSummary.total.blunders },
+    { name: 'Blunders', value: blunderTotalForPie },
     { name: 'Mistakes', value: activeSummary.total.mistakes },
     { name: 'Inaccuracies', value: activeSummary.total.inaccuracies },
   ]
@@ -212,13 +221,18 @@ export default function Dashboard({
       {view === 'bar' && (
         <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-6 shadow-sm animate-scale-in">
           <h2 className="mb-4 text-lg font-semibold text-gray-100">Top 5 Openings with Most Blunders</h2>
-          <div className="h-[30rem]">
+          <div className="h-[32rem] md:h-[36rem] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 60, left: 100, bottom: 160 }}>
+              <BarChart data={topOpeningBlunders} margin={{ top: 10, right: 80, left: 40, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="opening" interval={0} height={140} tickMargin={12} tick={<OpeningTick x={0} y={0} payload={{ value: '' }} />} />
-                <YAxis allowDecimals={false} />
-                <RechartsTooltip />
+                <YAxis allowDecimals={false} domain={[0, 'dataMax']} />
+                <RechartsTooltip 
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e5e7eb' }}
+                  itemStyle={{ color: '#e5e7eb' }}
+                  labelStyle={{ color: '#cbd5e1' }}
+                  formatter={(value: any, name: any) => [value as number, 'count']}
+                />
                 <Bar dataKey="count" fill="#60a5fa" />
               </BarChart>
             </ResponsiveContainer>
@@ -230,6 +244,7 @@ export default function Dashboard({
         <MistakeList
           games={filteredGames}
           summary={activeSummary}
+          isAllOpenings={!selectedOpening}
           selected={selectedMeta}
           onSelect={(fen, meta) => {
             setSelectedFen(fen)
@@ -237,7 +252,38 @@ export default function Dashboard({
           }}
         />
         <div className="sticky top-4">
-          <div className="mb-2 text-sm text-gray-400">{toMoveLabel}</div>
+          <div className="mb-2 flex items-center gap-3">
+            <div className="text-sm text-gray-400">{toMoveLabel}</div>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (navigator?.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(selectedFen)
+                  } else {
+                    const ta = document.createElement('textarea')
+                    ta.value = selectedFen
+                    ta.style.position = 'fixed'
+                    ta.style.opacity = '0'
+                    document.body.appendChild(ta)
+                    ta.focus()
+                    ta.select()
+                    document.execCommand('copy')
+                    document.body.removeChild(ta)
+                  }
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                } catch {
+                  // ignore errors
+                }
+              }}
+              className={`text-xs rounded px-2 py-1 border ${copied ? 'border-green-700 text-green-300 bg-green-900/20' : 'border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700'}`}
+              aria-label="Copy FEN to clipboard"
+              title={copied ? 'Copied!' : 'Copy FEN'}
+            >
+              {copied ? 'Copied' : 'Copy FEN'}
+            </button>
+          </div>
           <ChessboardDisplay fen={selectedFen} orientation={orientation} />
         </div>
       </div>

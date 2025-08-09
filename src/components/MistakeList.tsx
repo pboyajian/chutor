@@ -59,6 +59,7 @@ export default function MistakeList({
     const w = new Worker(new URL('../workers/mistakeDetails.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = w
 
+    const submitted = Array.isArray(source) ? source : []
     w.onmessage = (evt: MessageEvent) => {
       const { type, data } = evt.data || {}
       if (type === 'progress') {
@@ -66,7 +67,26 @@ export default function MistakeList({
         return
       }
       if (type === 'result') {
-        setPreparedItems(Array.isArray(data.items) ? data.items : [])
+        const workerItems = Array.isArray(data.items) ? data.items : []
+        if (workerItems.length === 0 && Array.isArray(submitted) && submitted.length > 0) {
+          // Fallback: synthesize minimal items so the list is not empty
+          const quick = submitted.map((m: any) => {
+            const game = (games as any[]).find((g) => String((g as any)?.id ?? '') === String(m.gameId))
+            return {
+              gameId: String(m.gameId ?? ''),
+              moveNumber: Number(m.moveNumber ?? 0),
+              centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined,
+              kind: m.kind,
+              playedSan: undefined,
+              bestSan: undefined,
+              opening: String((game as any)?.opening?.name ?? 'Unknown'),
+              fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+            }
+          })
+          setPreparedItems(quick)
+        } else {
+          setPreparedItems(workerItems)
+        }
         setRecurringPatterns(data.recurringPatterns || [])
         setIsPreparing(false)
         setProgress(null)
@@ -81,15 +101,17 @@ export default function MistakeList({
       workerRef.current = null
     }
 
-    const MAX_ITEMS = 3000
     const source: any[] = hasTopMistakes
       ? (summary as any).topMistakes
       : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
-    const limited = Array.isArray(source) ? source.slice(0, MAX_ITEMS) : []
-    setProgress({ processed: 0, total: limited.length })
+    const limited = submitted
+    setProgress({ processed: 0, total: submitted.length })
+    if ((import.meta as any).env?.DEV) {
+      console.log('[MistakeList] sending to worker:', { items: limited.length, hasTopMistakes, hasTopBlunders })
+    }
     const payload = {
       games,
-      mistakes: limited.map((m: any) => ({ gameId: String(m.gameId ?? ''), moveNumber: Number(m.moveNumber ?? 0), ply: Number(m.ply ?? 0), centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined, kind: m.kind })),
+      mistakes: submitted.map((m: any) => ({ gameId: String(m.gameId ?? ''), moveNumber: Number(m.moveNumber ?? 0), ply: Number(m.ply ?? 0), centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined, kind: m.kind })),
     }
     w.postMessage(payload)
 

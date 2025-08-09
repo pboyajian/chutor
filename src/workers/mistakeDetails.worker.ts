@@ -51,6 +51,7 @@ self.onmessage = (evt: MessageEvent) => {
   const { games, mistakes } = evt.data as { games: any[]; mistakes: WorkerMistake[] }
 
   const start = Date.now()
+  ;(self as any).postMessage({ type: 'progress', data: { processed: 0, total: mistakes?.length ?? 0 } })
   const mistakesByGame = new Map<string, WorkerMistake[]>()
   for (const m of mistakes) {
     const arr = mistakesByGame.get(m.gameId) || []

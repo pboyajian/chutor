@@ -18,7 +18,7 @@ export default function App() {
   const [uploadedGames, setUploadedGames] = useState<LichessGame[] | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
-  const [debugPanelVisible, setDebugPanelVisible] = useState(true)
+  const [debugPanelVisible, setDebugPanelVisible] = useState(false)
   const debugScrollRef = useRef<HTMLDivElement>(null)
 
   function extractGameNames(game: any): { white?: string; black?: string } {
