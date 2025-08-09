@@ -31,6 +31,25 @@ describe('Per-opening merge for pie totals', () => {
     expect(combinedTotal).toBe(2)
   })
 
+  it('filters out Chess960/variant games in analysis', () => {
+    const games: Game[] = [
+      { id: '1', opening: { name: 'StdOp' }, variant: 'standard', analysis: [{ ply: 1, judgment: { name: 'mistake', cp: 120 } }] },
+      { id: '2', opening: { name: 'Fischer Random' }, variant: 'chess960', analysis: [{ ply: 1, judgment: { name: 'mistake', cp: 120 } }] },
+    ]
+    const base = analyzeGames(games as any)
+    expect(base.total.mistakes + base.total.blunders + base.total.inaccuracies).toBe(1)
+  })
+
+  it('skips games where opening name is "?"', () => {
+    const games: Game[] = [
+      { id: '1', opening: { name: '?' }, analysis: [{ ply: 1, judgment: { name: 'mistake', cp: 120 } }] },
+      { id: '2', opening: { name: 'Std' }, analysis: [{ ply: 1, judgment: { name: 'mistake', cp: 120 } }] },
+    ]
+    const base = analyzeGames(games as any)
+    expect(base.total.mistakes + base.total.blunders + base.total.inaccuracies).toBe(1)
+    expect(base.mistakesByOpening['?']).toBeUndefined()
+  })
+
   it('performance guard: synthetic merge up to ~2500 completes quickly (logic-only)', async () => {
     const big: Game[] = []
     for (let i = 0; i < 2500; i++) {

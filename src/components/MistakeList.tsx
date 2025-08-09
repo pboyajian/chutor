@@ -28,7 +28,20 @@ export default function MistakeList({
 
   // Worker state
   const workerRef = useRef<Worker | null>(null)
-  const [isPreparing, setIsPreparing] = useState(false)
+  // Initialize preparing state true when we have games and either
+  // merged source will be non-empty or totals indicate mistakes exist.
+  const [isPreparing, setIsPreparing] = useState<boolean>(() => {
+    try {
+      const hasGames = Array.isArray((games as any)) && (games as any).length > 0
+      const hasTM = Array.isArray((summary as any)?.topMistakes) && (summary as any).topMistakes.length > 0
+      const hasTB = Array.isArray((summary as any)?.topBlunders) && (summary as any).topBlunders.length > 0
+      const totals = (summary as any)?.total
+      const totalCount = totals ? Number(totals.inaccuracies || 0) + Number(totals.mistakes || 0) + Number(totals.blunders || 0) : 0
+      return hasGames && (hasTM || hasTB || totalCount > 0)
+    } catch {
+      return false
+    }
+  })
   const [preparedItems, setPreparedItems] = useState<Array<any>>([])
   const [recurringPatterns, setRecurringPatterns] = useState<Array<any>>([])
   const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null)
@@ -55,12 +68,56 @@ export default function MistakeList({
     }
     const submitted = merged
 
-    if (!games?.length || submitted.length === 0) {
+    // If merged lists are empty but totals indicate there should be mistakes,
+    // synthesize a minimal placeholder list so the panel isn't empty on first render.
+    const totals = (summary as any)?.total
+    const totalCount = totals ? Number(totals.inaccuracies || 0) + Number(totals.mistakes || 0) + Number(totals.blunders || 0) : 0
+
+    if (!games?.length || (submitted.length === 0 && totalCount === 0)) {
       setPreparedItems([])
       setRecurringPatterns([])
       setIsPreparing(false)
       setProgress(null)
       return
+    }
+
+    if (submitted.length === 0 && totalCount > 0) {
+      // Build a tiny set of placeholders using available games/openings only to seed the UI
+      const placeholders: any[] = []
+      const seenOpenings = new Set<string>()
+      for (const g of (games as any[])) {
+        const opening = String((g as any)?.opening?.name ?? 'Unknown')
+        if (seenOpenings.has(opening)) continue
+        seenOpenings.add(opening)
+        placeholders.push({ gameId: String((g as any)?.id ?? ''), moveNumber: 1, ply: 1, kind: undefined, centipawnLoss: undefined })
+        if (placeholders.length >= Math.min(10, totalCount)) break
+      }
+      if (placeholders.length > 0) {
+        // Show placeholders synchronously
+        const quick = placeholders.map((m: any) => {
+          const game = (games as any[]).find((gg) => String((gg as any)?.id ?? '') === String(m.gameId))
+          return {
+            gameId: String(m.gameId ?? ''),
+            moveNumber: Number(m.moveNumber ?? 0),
+            centipawnLoss: undefined,
+            kind: undefined,
+            playedSan: undefined,
+            bestSan: undefined,
+            opening: String((game as any)?.opening?.name ?? 'Unknown'),
+            fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+          }
+        })
+        setPreparedItems(quick)
+        const counts = new Map<string, number>()
+        for (const q of quick) counts.set(q.opening, (counts.get(q.opening) ?? 0) + 1)
+        const synthesized = Array.from(counts.entries())
+          .map(([opening, count]) => ({ key: `${opening}||—`, count, opening, move: '—', sample: { gameId: quick[0].gameId, moveNumber: quick[0].moveNumber } }))
+          .sort((a, b) => b.count - a.count)
+        setRecurringPatterns(synthesized)
+        setIsPreparing(false)
+        setProgress(null)
+        return
+      }
     }
 
     setIsPreparing(true)
@@ -118,7 +175,25 @@ export default function MistakeList({
           setRecurringPatterns(synthesized)
         } else {
           setPreparedItems(workerItems)
-          setRecurringPatterns(data.recurringPatterns || [])
+          let patterns = Array.isArray(data.recurringPatterns) ? data.recurringPatterns : []
+          if ((!patterns || patterns.length === 0) && workerItems.length > 0) {
+            // Synthesize minimal recurring patterns from worker items to avoid an empty panel
+            const counts = new Map<string, { opening: string; move: string; key: string; sample: { gameId: string; moveNumber: number } }>()
+            for (const it of workerItems) {
+              const opening = String(it.opening ?? 'Unknown')
+              const move = String(it.playedSan ?? '—')
+              const key = `${opening}||${move}`
+              const existing = counts.get(key)
+              if (!existing) counts.set(key, { opening, move, key, sample: { gameId: String(it.gameId), moveNumber: Number(it.moveNumber) } })
+              else counts.set(key, existing)
+            }
+            patterns = Array.from(counts.values()).map((v) => ({ key: v.key, count: workerItems.filter((i: any) => String(i.opening ?? 'Unknown') === v.opening && String(i.playedSan ?? '—') === v.move).length, opening: v.opening, move: v.move, sample: v.sample }))
+              .sort((a, b) => b.count - a.count)
+            if ((import.meta as any).env?.DEV) {
+              console.log('[MistakeList] synthesized recurring patterns from worker items:', { count: patterns.length })
+            }
+          }
+          setRecurringPatterns(patterns)
         }
         setIsPreparing(false)
         setProgress(null)

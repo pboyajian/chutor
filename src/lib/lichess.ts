@@ -23,6 +23,8 @@ export async function fetchLichessGames(
   url.searchParams.set('evals', 'true')
   url.searchParams.set('opening', 'true')
   url.searchParams.set('pgnInJson', 'true')
+  // Request only standard games to avoid Chess960/variants upstream when possible
+  url.searchParams.set('variant', 'standard')
   if (typeof opts.max === 'number') url.searchParams.set('max', String(opts.max))
 
   let response: Response
