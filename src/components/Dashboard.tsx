@@ -81,7 +81,9 @@ export default function Dashboard({
   const openings = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const g of games as any[]) {
-      const name = String(g?.opening?.name ?? 'Unknown')
+      const raw = String(g?.opening?.name ?? 'Unknown')
+      const name = raw.trim() === '?' ? 'Unknown' : raw
+      if (name.trim() === '?') continue
       counts[name] = (counts[name] ?? 0) + 1
     }
     if ((import.meta as any).env?.DEV) {

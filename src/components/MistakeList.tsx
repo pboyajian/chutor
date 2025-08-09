@@ -156,7 +156,10 @@ export default function MistakeList({
               kind: m.kind,
               playedSan: undefined,
               bestSan: undefined,
-              opening: String((game as any)?.opening?.name ?? 'Unknown'),
+              opening: (() => {
+                const raw = String((game as any)?.opening?.name ?? 'Unknown')
+                return raw.trim() === '?' ? 'Unknown' : raw
+              })(),
               fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
             }
           })
@@ -180,7 +183,8 @@ export default function MistakeList({
             // Synthesize minimal recurring patterns from worker items to avoid an empty panel
             const counts = new Map<string, { opening: string; move: string; key: string; sample: { gameId: string; moveNumber: number } }>()
             for (const it of workerItems) {
-              const opening = String(it.opening ?? 'Unknown')
+              const openingRaw = String(it.opening ?? 'Unknown')
+              const opening = openingRaw.trim() === '?' ? 'Unknown' : openingRaw
               const move = String(it.playedSan ?? '—')
               const key = `${opening}||${move}`
               const existing = counts.get(key)

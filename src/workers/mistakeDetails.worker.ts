@@ -178,9 +178,10 @@ self.onmessage = (evt: MessageEvent) => {
 
       const fen = fenAtPly.get(ply) || temp.fen()
 
-      items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, kind: b.kind, playedSan, bestSan, opening, fen })
+      const normOpening = opening.trim() === '?' ? 'Unknown' : opening
+      items.push({ gameId, moveNumber: b.moveNumber, centipawnLoss: b.centipawnLoss, kind: b.kind, playedSan, bestSan, opening: normOpening, fen })
 
-      const key = `${opening}||${playedSan ?? '—'}`
+      const key = `${normOpening}||${playedSan ?? '—'}`
       counts[key] = (counts[key] ?? 0) + 1
       if (!samples[key]) {
         samples[key] = { gameId, moveNumber: b.moveNumber, opening, move: playedSan ?? '—', fen }
