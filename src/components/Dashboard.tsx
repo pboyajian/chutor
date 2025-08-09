@@ -47,6 +47,15 @@ export default function Dashboard({
     return parts[1] === 'b' ? 'black' : 'white'
   }, [selectedFen])
   const toMoveLabel = orientation === 'black' ? 'Black to move' : 'White to move'
+  const selectedGame = useMemo(() => {
+    if (!selectedMeta?.gameId) return undefined
+    const arr = (games as any[]) || []
+    return arr.find((g) => String((g as any)?.id ?? '') === String(selectedMeta.gameId))
+  }, [games, selectedMeta])
+  const selectedPGN = useMemo(() => {
+    const raw: string | undefined = (selectedGame?.pgn?.raw as string) ?? (typeof (selectedGame as any)?.pgn === 'string' ? (selectedGame as any).pgn : undefined)
+    return raw ?? ''
+  }, [selectedGame])
   const openings = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const g of games as any[]) {
@@ -258,10 +267,10 @@ export default function Dashboard({
               onClick={async () => {
                 try {
                   if (navigator?.clipboard?.writeText) {
-                    await navigator.clipboard.writeText(selectedFen)
+                    await navigator.clipboard.writeText(selectedPGN)
                   } else {
                     const ta = document.createElement('textarea')
-                    ta.value = selectedFen
+                    ta.value = selectedPGN
                     ta.style.position = 'fixed'
                     ta.style.opacity = '0'
                     document.body.appendChild(ta)
@@ -276,11 +285,12 @@ export default function Dashboard({
                   // ignore errors
                 }
               }}
-              className={`text-xs rounded px-2 py-1 border ${copied ? 'border-green-700 text-green-300 bg-green-900/20' : 'border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700'}`}
-              aria-label="Copy FEN to clipboard"
-              title={copied ? 'Copied!' : 'Copy FEN'}
+              disabled={!selectedPGN}
+              className={`text-xs rounded px-2 py-1 border ${!selectedPGN ? 'opacity-50 cursor-not-allowed border-slate-700 text-gray-400' : copied ? 'border-green-700 text-green-300 bg-green-900/20' : 'border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700'}`}
+              aria-label="Copy PGN to clipboard"
+              title={!selectedPGN ? 'PGN not available' : copied ? 'Copied!' : 'Copy PGN'}
             >
-              {copied ? 'Copied' : 'Copy FEN'}
+              {copied ? 'Copied' : 'Copy PGN'}
             </button>
           </div>
           <ChessboardDisplay fen={selectedFen} orientation={orientation} />
