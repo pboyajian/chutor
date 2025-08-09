@@ -1,0 +1,37 @@
+{
+  "index": {
+    "86655bbd7693366fb949cff12702ab43cf76c2eeab835633f779bd621ebe7c77": {
+      "key": "86655bbd7693366fb949cff12702ab43cf76c2eeab835633f779bd621ebe7c77",
+      "offset": 0,
+      "length": 18627,
+      "createdAt": 1754764967993,
+      "version": 2,
+      "size": 18627
+    },
+    "884406cc17a7647da9ffdd86e9178d2952e3a9b1f211944e08aeaa64cd23a77e": {
+      "key": "884406cc17a7647da9ffdd86e9178d2952e3a9b1f211944e08aeaa64cd23a77e",
+      "offset": 18627,
+      "length": 793,
+      "createdAt": 1754766543773,
+      "version": 2,
+      "size": 793
+    },
+    "05bb049073c74db1c1ca34e7c6c16e62b1dcb085b299c85a72abe292d2018eb7": {
+      "key": "05bb049073c74db1c1ca34e7c6c16e62b1dcb085b299c85a72abe292d2018eb7",
+      "offset": 19420,
+      "length": 2046,
+      "createdAt": 1754766788577,
+      "version": 2,
+      "size": 2046
+    },
+    "532feb22a5ffb23b79cdb09d9d4033011ef9b3d0427de9463073169a35721aca": {
+      "key": "532feb22a5ffb23b79cdb09d9d4033011ef9b3d0427de9463073169a35721aca",
+      "offset": 21466,
+      "length": 22888,
+      "createdAt": 1754767054782,
+      "version": 2,
+      "size": 22888
+    }
+  },
+  "diskSize": 44354
+}

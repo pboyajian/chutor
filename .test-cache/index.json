@@ -2,28 +2,28 @@
   "index": {
     "k1": {
       "key": "k1",
-      "offset": 1836,
+      "offset": 8317,
       "length": 153,
-      "createdAt": 1754764105863,
-      "version": 6,
+      "createdAt": 1754765532254,
+      "version": 20,
       "size": 153
     },
     "k2": {
       "key": "k2",
-      "offset": 1989,
+      "offset": 8470,
       "length": 153,
-      "createdAt": 1754764105877,
-      "version": 6,
+      "createdAt": 1754765532265,
+      "version": 20,
       "size": 153
     },
     "k3": {
       "key": "k3",
-      "offset": 2142,
+      "offset": 8623,
       "length": 153,
-      "createdAt": 1754764105879,
-      "version": 6,
+      "createdAt": 1754765532266,
+      "version": 20,
       "size": 153
     }
   },
-  "diskSize": 2295
+  "diskSize": 8776
 }
