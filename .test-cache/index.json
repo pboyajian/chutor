@@ -1,0 +1,29 @@
+{
+  "index": {
+    "k1": {
+      "key": "k1",
+      "offset": 459,
+      "length": 153,
+      "createdAt": 1754761850546,
+      "version": 3,
+      "size": 153
+    },
+    "k2": {
+      "key": "k2",
+      "offset": 612,
+      "length": 153,
+      "createdAt": 1754761850592,
+      "version": 3,
+      "size": 153
+    },
+    "k3": {
+      "key": "k3",
+      "offset": 765,
+      "length": 153,
+      "createdAt": 1754761850596,
+      "version": 3,
+      "size": 153
+    }
+  },
+  "diskSize": 918
+}

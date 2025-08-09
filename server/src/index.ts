@@ -6,6 +6,7 @@ const { Worker } = require('worker_threads')
 const os = require('os')
 
 const app = express()
+const { globalSummaryCache } = require('./cache')
 const PORT = process.env.PORT || 3001
 
 // Middleware
@@ -199,6 +200,20 @@ app.post('/api/analyze', async (req: any, res: any) => {
       })
     }
 
+    const force = String(req.query?.force || '') === 'true'
+    const key = (globalSummaryCache as any).constructor.computeKeyFromDataset(games, options || {})
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`🧮 Cache key: ${String(key).slice(0, 12)}… force=${force}`)
+    }
+
+    if (!force) {
+      const hit = (globalSummaryCache as any).tryGet(key)
+      if (hit) {
+        if (process.env.NODE_ENV !== 'production') console.log('⚡ Cache hit: returning cached summary')
+        return res.json({ success: true, summary: hit.summary, processingTime: 0, gameCount: games.length, detectedUsername: undefined, meta: { key, createdAt: hit.createdAt, version: hit.version } })
+      }
+    }
+
     console.log(`🎯 Starting analysis of ${games.length} games...`)
     console.log(`🔧 Options:`, options)
     
@@ -208,13 +223,21 @@ app.post('/api/analyze', async (req: any, res: any) => {
     console.log(`✅ Analysis completed successfully!`)
     console.log(`📈 Final stats: ${result.summary.total.blunders} blunders, ${result.summary.total.mistakes} mistakes, ${result.summary.total.inaccuracies} inaccuracies`)
     
+    // Save to cache with monotonic versioning. If bootstrapping, bump the version for this key.
+    try {
+      ;(globalSummaryCache as any).save(key, { summary: result.summary })
+    } catch (e) {
+      console.warn('Cache save failed:', e)
+    }
+
     return res.json({
       success: true,
       summary: result.summary,
       processingTime: result.processingTime,
       gameCount: result.gameCount,
       detectedUsername: result.detectedUsername,
-      parallelStats: result.parallelStats
+      parallelStats: result.parallelStats,
+      meta: { key, createdAt: Date.now(), version: (globalSummaryCache as any).getVersion(key) }
     })
     
   } catch (error) {
@@ -223,6 +246,16 @@ app.post('/api/analyze', async (req: any, res: any) => {
       error: 'Analysis failed', 
       details: error instanceof Error ? error.message : 'Unknown error'
     })
+  }
+})
+
+// Cache metrics endpoint
+app.get('/api/cache/info', (req: any, res: any) => {
+  try {
+    const m = (globalSummaryCache as any).getMetrics()
+    res.json(m)
+  } catch (e) {
+    res.status(500).json({ error: 'cache info failed' })
   }
 })
 

@@ -6,6 +6,8 @@ import DashboardSkeleton from './components/DashboardSkeleton'
 import Spinner from './components/Spinner'
 import { fetchLichessGames, LichessError } from './lib/lichess'
 import { apiClient } from './lib/api'
+import { computeDatasetKey } from './lib/datasetHash'
+import { idbGet, idbSet } from './lib/idbCache'
 import type { LichessGame } from './lib/lichess'
 import type { AnalysisSummary } from './lib/analysis'
 
@@ -82,16 +84,37 @@ export default function App() {
         setIsAnalyzing(true)
         const detected = deriveUsernameFromGames(uploadedGames)
         setSelectedUsername(detected ?? null)
-        
-        // Use backend API instead of worker
-        const result = await apiClient.analyzeGames(uploadedGames, { onlyForUsername: detected })
-        setSummary(result.summary)
+        // Client-side cache: try IndexedDB first
+        const key = computeDatasetKey(uploadedGames as any, { onlyForUsername: detected })
+        try {
+          const cached = await idbGet<AnalysisSummary>(key)
+          if (cached) {
+            if ((import.meta as any).env?.DEV) console.log(`IDB hit: ${key}`)
+            setSummary(cached.summary)
+            // Background validation
+            apiClient.analyzeGames(uploadedGames, { onlyForUsername: detected }).then(async (server) => {
+              const serverVersion = (server as any)?.meta?.version as number | undefined
+              if (!serverVersion || serverVersion > (cached.version || 0)) {
+                await idbSet({ key, summary: server.summary, createdAt: Date.now(), version: serverVersion || (cached.version || 1) })
+                if ((import.meta as any).env?.DEV) console.log('validated cache updated')
+                setSummary(server.summary)
+              }
+            }).catch(() => {})
+          } else {
+            const result = await apiClient.analyzeGames(uploadedGames, { onlyForUsername: detected })
+            setSummary(result.summary)
+            const v = (result as any)?.meta?.version as number | undefined
+            await idbSet({ key, summary: result.summary, createdAt: Date.now(), version: v || 1 })
+          }
+        } catch {
+          const result = await apiClient.analyzeGames(uploadedGames, { onlyForUsername: detected })
+          setSummary(result.summary)
+        }
         
         // Add debug log
         setDebugLogs(prev => [...prev, {
-          message: 'Backend analysis completed',
+          message: 'Analysis ready (cached or server)',
           timestamp: Date.now(),
-          data: { processingTime: result.processingTime, gameCount: result.gameCount }
         }])
       } else {
         const abort = new AbortController()
@@ -102,16 +125,37 @@ export default function App() {
           setIsAnalyzing(true)
           const detected = deriveUsernameFromGames(data)
           setSelectedUsername(detected ?? (username ?? null))
-          
-          // Use backend API instead of worker
-          const result = await apiClient.analyzeGames(data, { onlyForUsername: detected ?? username })
-          setSummary(result.summary)
+          // Client-side cache: try IndexedDB first
+          const key = computeDatasetKey(data as any, { onlyForUsername: detected ?? username })
+          try {
+            const cached = await idbGet<AnalysisSummary>(key)
+            if (cached) {
+              if ((import.meta as any).env?.DEV) console.log(`IDB hit: ${key}`)
+              setSummary(cached.summary)
+              // Background validation
+              apiClient.analyzeGames(data, { onlyForUsername: detected ?? username }).then(async (server) => {
+                const serverVersion = (server as any)?.meta?.version as number | undefined
+                if (!serverVersion || serverVersion > (cached.version || 0)) {
+                  await idbSet({ key, summary: server.summary, createdAt: Date.now(), version: serverVersion || (cached.version || 1) })
+                  if ((import.meta as any).env?.DEV) console.log('validated cache updated')
+                  setSummary(server.summary)
+                }
+              }).catch(() => {})
+            } else {
+              const result = await apiClient.analyzeGames(data, { onlyForUsername: detected ?? username })
+              setSummary(result.summary)
+              const v = (result as any)?.meta?.version as number | undefined
+              await idbSet({ key, summary: result.summary, createdAt: Date.now(), version: v || 1 })
+            }
+          } catch {
+            const result = await apiClient.analyzeGames(data, { onlyForUsername: detected ?? username })
+            setSummary(result.summary)
+          }
           
           // Add debug log
           setDebugLogs(prev => [...prev, {
-            message: 'Backend analysis completed',
+            message: 'Analysis ready (cached or server)',
             timestamp: Date.now(),
-            data: { processingTime: result.processingTime, gameCount: result.gameCount }
           }])
         } finally {
           abort.abort()
@@ -160,16 +204,36 @@ export default function App() {
             setGames(uploaded)
             // Show immediate feedback
             setIsAnalyzing(true)
-            
-            // Use backend API instead of worker
-            const result = await apiClient.analyzeGames(uploaded, { onlyForUsername: detected })
-            setSummary(result.summary)
+            // Client-side cache
+            const key = computeDatasetKey(uploaded as any, { onlyForUsername: detected })
+            try {
+              const cached = await idbGet<AnalysisSummary>(key)
+              if (cached) {
+                if ((import.meta as any).env?.DEV) console.log(`IDB hit: ${key}`)
+                setSummary(cached.summary)
+                apiClient.analyzeGames(uploaded, { onlyForUsername: detected }).then(async (server) => {
+                  const serverVersion = (server as any)?.meta?.version as number | undefined
+                  if (!serverVersion || serverVersion > (cached.version || 0)) {
+                    await idbSet({ key, summary: server.summary, createdAt: Date.now(), version: serverVersion || (cached.version || 1) })
+                    if ((import.meta as any).env?.DEV) console.log('validated cache updated')
+                    setSummary(server.summary)
+                  }
+                }).catch(() => {})
+              } else {
+                const result = await apiClient.analyzeGames(uploaded, { onlyForUsername: detected })
+                setSummary(result.summary)
+                const v = (result as any)?.meta?.version as number | undefined
+                await idbSet({ key, summary: result.summary, createdAt: Date.now(), version: v || 1 })
+              }
+            } catch {
+              const result = await apiClient.analyzeGames(uploaded, { onlyForUsername: detected })
+              setSummary(result.summary)
+            }
             
             // Add debug log
             setDebugLogs(prev => [...prev, {
-              message: 'Backend analysis completed',
+              message: 'Analysis ready (cached or server)',
               timestamp: Date.now(),
-              data: { processingTime: result.processingTime, gameCount: result.gameCount }
             }])
           })
           .catch((error) => {
