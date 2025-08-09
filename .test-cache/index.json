@@ -1,29 +1,4 @@
 {
-  "index": {
-    "k1": {
-      "key": "k1",
-      "offset": 8317,
-      "length": 153,
-      "createdAt": 1754765532254,
-      "version": 20,
-      "size": 153
-    },
-    "k2": {
-      "key": "k2",
-      "offset": 8470,
-      "length": 153,
-      "createdAt": 1754765532265,
-      "version": 20,
-      "size": 153
-    },
-    "k3": {
-      "key": "k3",
-      "offset": 8623,
-      "length": 153,
-      "createdAt": 1754765532266,
-      "version": 20,
-      "size": 153
-    }
-  },
-  "diskSize": 8776
+  "index": {},
+  "diskSize": 11995
 }

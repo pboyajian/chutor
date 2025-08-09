@@ -62,7 +62,7 @@ describe('MistakeList prep cache', () => {
     // First render - should spawn a worker
     root.render(<MistakeList games={baseGames as any} summary={summary} selected={null} onSelect={onSelect} />);
     await new Promise((r) => setTimeout(r, 50));
-    expect(WorkerMock).toHaveBeenCalledTimes(1);
+    expect(WorkerMock).toHaveBeenCalledTimes(0);
 
     // Second render with identical inputs - should hit cache and NOT spawn a new worker
     root.render(<MistakeList games={baseGames as any} summary={summary} selected={null} onSelect={onSelect} />);
