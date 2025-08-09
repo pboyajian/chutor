@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { analyzeGames as analyzeServer } from '../../dist/analysis.js'
+// Import the TS source directly when running in the server package
+// In runtime, worker uses the compiled JS; tests target the TS module export
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import { analyzeGames as analyzeServer } from '../analysis'
 
 // Minimal helpers for building fake games
 function game(id: string, opening: string, analysis: any[], pgn?: string) {
