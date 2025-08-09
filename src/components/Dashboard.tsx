@@ -244,7 +244,6 @@ export default function Dashboard({
         <MistakeList
           games={filteredGames}
           summary={activeSummary}
-          isAllOpenings={!selectedOpening}
           selected={selectedMeta}
           onSelect={(fen, meta) => {
             setSelectedFen(fen)

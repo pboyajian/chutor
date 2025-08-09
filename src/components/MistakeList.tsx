@@ -56,10 +56,15 @@ export default function MistakeList({
       workerRef.current = null
     }
 
+    // Prepare the source list once (topMistakes if present, otherwise topBlunders tagged as blunders)
+    const source: any[] = hasTopMistakes
+      ? (summary as any).topMistakes
+      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
+    const submitted = Array.isArray(source) ? source : []
+    setProgress({ processed: 0, total: submitted.length })
+
     const w = new Worker(new URL('../workers/mistakeDetails.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = w
-
-    const submitted = Array.isArray(source) ? source : []
     w.onmessage = (evt: MessageEvent) => {
       const { type, data } = evt.data || {}
       if (type === 'progress') {
@@ -101,13 +106,8 @@ export default function MistakeList({
       workerRef.current = null
     }
 
-    const source: any[] = hasTopMistakes
-      ? (summary as any).topMistakes
-      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
-    const limited = submitted
-    setProgress({ processed: 0, total: submitted.length })
     if ((import.meta as any).env?.DEV) {
-      console.log('[MistakeList] sending to worker:', { items: limited.length, hasTopMistakes, hasTopBlunders })
+      console.log('[MistakeList] sending to worker:', { items: submitted.length, hasTopMistakes, hasTopBlunders })
     }
     const payload = {
       games,
