@@ -153,6 +153,7 @@ function analyzeGamesWithPrecomputedData(
   }
 
   const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
+  const restrictOpening: string | undefined = (options as any)?.bootstrapOpening
   const totalGames = games.length
   let processedGames = 0
   const logInterval = Math.max(1, Math.floor(totalGames / 10))
@@ -167,6 +168,10 @@ function analyzeGamesWithPrecomputedData(
     }
     
     const openingName = String((game as any)?.opening?.name ?? 'Unknown')
+    // Skip non-target openings entirely when bootstrapping to avoid any cost
+    if (restrictOpening && openingName !== restrictOpening) {
+      continue
+    }
     const analyzedMoves: any[] = Array.isArray((game as any)?.analysis)
       ? ((game as any).analysis as any[])
       : []
@@ -579,6 +584,7 @@ function analyzeGames(
     const fenIndex: Map<string, Aggregated> = new Map()
     let evaluatedPliesIndexed = 0
     for (const lbl of rawLabels) {
+      if (restrictOpening && lbl.opening !== restrictOpening) continue
       const pos = positionsByGame.get(lbl.gameId)
       if (!pos) continue
       const fen = pos.get(lbl.ply)

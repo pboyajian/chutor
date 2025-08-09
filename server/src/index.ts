@@ -33,10 +33,18 @@ async function analyzeWithParallelWorkers(games: any[], options: any = {}): Prom
   const numCPUs = os.cpus().length
   // If bootstrapping a specific opening, use a single worker so the index sees all games
   const numWorkers = options?.bootstrapOpening ? 1 : Math.min(numCPUs, 8)
-  const chunkSize = Math.ceil(games.length / numWorkers)
+  // Optionally pre-filter by opening to reduce workload
+  let workingSet = games
+  const openingFilter: string | undefined = options?.bootstrapOpening
+  if (openingFilter) {
+    const before = games.length
+    workingSet = games.filter((g: any) => String(g?.opening?.name ?? 'Unknown') === openingFilter)
+    console.log(`🎯 Prefiltered by opening '${openingFilter}': ${workingSet.length}/${before} games`)
+  }
+  const chunkSize = Math.ceil(workingSet.length / numWorkers)
   
   console.log(`🔄 Starting parallel analysis with ${numWorkers} workers`)
-  console.log(`📊 Processing ${games.length} games in chunks of ~${chunkSize}`)
+  console.log(`📊 Processing ${workingSet.length} games in chunks of ~${chunkSize}`)
   
   const startTime = Date.now()
   const workers: any[] = []
@@ -52,8 +60,8 @@ async function analyzeWithParallelWorkers(games: any[], options: any = {}): Prom
   try {
     // Split games into chunks
     const chunks: any[][] = []
-    for (let i = 0; i < games.length; i += chunkSize) {
-      chunks.push(games.slice(i, i + chunkSize))
+    for (let i = 0; i < workingSet.length; i += chunkSize) {
+      chunks.push(workingSet.slice(i, i + chunkSize))
     }
     
     console.log(`📦 Created ${chunks.length} chunks for parallel processing`)
