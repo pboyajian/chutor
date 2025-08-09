@@ -152,6 +152,11 @@ Response:
 }
 ```
 
+Caching:
+- The server computes a content-addressed key from dataset + options. If present in cache, responses are returned quickly.
+- Append `?force=true` to bypass cache for debugging.
+- Basic cache metrics are available at `GET /api/cache/info` (DEV only): entries, size, hit/miss.
+
 Notes:
 - The backend focuses on the summary. The frontend worker derives “played/best SAN”, per‑ply FEN and recurring groups using the summary and PGNs.
 

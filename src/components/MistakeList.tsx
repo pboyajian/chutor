@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react'
+import { computeDatasetKey } from '../lib/datasetHash'
 import type { AnalysisSummary } from '../lib/analysis'
 import type { LichessGame } from '../lib/lichess'
 import { Chess } from 'chess.js'
@@ -28,6 +29,8 @@ export default function MistakeList({
 
   // Worker state
   const workerRef = useRef<Worker | null>(null)
+  // Prep cache to reuse results across opening switches within the same session
+  const prepCacheRef = useRef<Map<string, { items: any[]; patterns: any[] }>>(new Map())
   // Initialize preparing state true when we have games and either
   // merged source will be non-empty or totals indicate mistakes exist.
   const [isPreparing, setIsPreparing] = useState<boolean>(() => {
@@ -81,6 +84,22 @@ export default function MistakeList({
       return
     }
 
+    // Build a stable cache key from current games subset and submitted list
+    const gameKey = computeDatasetKey(games as any, {})
+    const mistKeyPart = submitted
+      .map((m: any) => `${String(m.gameId)}#${Number(m.ply ?? 0)}#${Number(m.moveNumber ?? 0)}#${String(m.kind ?? '')}#${typeof m.centipawnLoss === 'number' ? m.centipawnLoss : ''}`)
+      .sort()
+      .join('|')
+    const cacheKey = `${gameKey}:${mistKeyPart}`
+    const cached = prepCacheRef.current.get(cacheKey)
+    if (cached) {
+      setPreparedItems(cached.items)
+      setRecurringPatterns(cached.patterns)
+      setIsPreparing(false)
+      setProgress(null)
+      return
+    }
+
     if (submitted.length === 0 && totalCount > 0) {
       // Build a tiny set of placeholders using available games/openings only to seed the UI
       const placeholders: any[] = []
@@ -114,6 +133,13 @@ export default function MistakeList({
           .map(([opening, count]) => ({ key: `${opening}||—`, count, opening, move: '—', sample: { gameId: quick[0].gameId, moveNumber: quick[0].moveNumber } }))
           .sort((a, b) => b.count - a.count)
         setRecurringPatterns(synthesized)
+        // Save placeholders in cache as well
+        prepCacheRef.current.set(cacheKey, { items: quick, patterns: synthesized })
+        // Simple bound to avoid unbounded growth
+        if (prepCacheRef.current.size > 8) {
+          const firstKey = prepCacheRef.current.keys().next().value
+          if (firstKey) prepCacheRef.current.delete(firstKey)
+        }
         setIsPreparing(false)
         setProgress(null)
         return
@@ -176,6 +202,7 @@ export default function MistakeList({
             .map(([opening, count]) => ({ key: `${opening}||—`, count, opening, move: '—', sample: sampleByOpening.get(opening)! }))
             .sort((a, b) => b.count - a.count)
           setRecurringPatterns(synthesized)
+          prepCacheRef.current.set(cacheKey, { items: quick, patterns: synthesized })
         } else {
           setPreparedItems(workerItems)
           let patterns = Array.isArray(data.recurringPatterns) ? data.recurringPatterns : []
@@ -198,11 +225,17 @@ export default function MistakeList({
             }
           }
           setRecurringPatterns(patterns)
+          prepCacheRef.current.set(cacheKey, { items: workerItems, patterns })
         }
         setIsPreparing(false)
         setProgress(null)
         w.terminate()
         workerRef.current = null
+        // Simple bound to avoid unbounded growth
+        if (prepCacheRef.current.size > 8) {
+          const firstKey = prepCacheRef.current.keys().next().value
+          if (firstKey) prepCacheRef.current.delete(firstKey)
+        }
       }
     }
     w.onerror = () => {

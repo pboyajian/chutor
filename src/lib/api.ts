@@ -29,8 +29,11 @@ export class ApiClient {
   async analyzeGames(
     games: LichessGame[],
     options: { onlyForUsername?: string; bootstrapOpening?: string } = {},
+    { force }: { force?: boolean } = {},
   ): Promise<AnalysisResponse> {
-    const response = await fetch(`${this.baseUrl}/api/analyze`, {
+    const url = new URL(`${this.baseUrl}/api/analyze`)
+    if (force) url.searchParams.set('force', 'true')
+    const response = await fetch(url.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

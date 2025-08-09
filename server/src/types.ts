@@ -53,6 +53,8 @@ export interface AnalysisResponse {
   summary: AnalysisSummary
   processingTime: number
   gameCount: number
+  // optional server meta for cache management
+  meta?: { key: string; createdAt: number; version: number }
 }
 
 export interface ProgressUpdate {

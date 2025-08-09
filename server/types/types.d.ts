@@ -69,6 +69,11 @@ export interface AnalysisResponse {
     summary: AnalysisSummary;
     processingTime: number;
     gameCount: number;
+    meta?: {
+        key: string;
+        createdAt: number;
+        version: number;
+    };
 }
 export interface ProgressUpdate {
     current: number;
