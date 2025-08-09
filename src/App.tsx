@@ -179,6 +179,16 @@ export default function App() {
     return () => window.removeEventListener('pgnUploadAnalyzed', onUpload as EventListener)
   }, [])
 
+  // Listen for bootstrapped summary update (from Dashboard action)
+  useEffect(() => {
+    const handler = (e: any) => {
+      const s = e?.detail?.summary
+      if (s) setSummary(s)
+    }
+    window.addEventListener('chutor:bootstrapped', handler as EventListener)
+    return () => window.removeEventListener('chutor:bootstrapped', handler as EventListener)
+  }, [])
+
   // Auto-scroll debug logs to bottom
   useEffect(() => {
     if (debugScrollRef.current) {

@@ -590,8 +590,9 @@ function analyzeGames(
     return false
   }
 
-  // Apply bootstrapped matches to unevaluated games
-  console.log('🔎 Applying bootstrapped matches to unevaluated games...')
+  // Apply bootstrapped matches to unevaluated games, optionally restricted by opening
+  const restrictOpening: string | undefined = (options as any)?.bootstrapOpening
+  console.log(`🔎 Applying bootstrapped matches to unevaluated games${restrictOpening ? ` (only opening: ${restrictOpening})` : ''}...`)
   const tBootStart = Date.now()
   let appliedInacc = 0
   let appliedMist = 0
@@ -601,6 +602,7 @@ function analyzeGames(
     const gid3 = String((game as any)?.id ?? '')
     if (!gid3) continue
     const opening = openingByGame.get(gid3) || 'Unknown'
+    if (restrictOpening && opening !== restrictOpening) continue
     const pos = positionsByGame.get(gid3)
     if (!pos) continue
     for (const [ply, fen] of pos.entries()) {

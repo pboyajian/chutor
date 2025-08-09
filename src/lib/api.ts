@@ -7,6 +7,7 @@ export interface AnalysisRequest {
   games: LichessGame[]
   options: {
     onlyForUsername?: string
+    bootstrapOpening?: string
   }
 }
 

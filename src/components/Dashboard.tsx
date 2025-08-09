@@ -68,6 +68,21 @@ export default function Dashboard({
       .map(([name, count]) => ({ name, count }))
   }, [games])
 
+  // Estimate unevaluated game count for the selected opening
+  const unevaluatedCountForSelected = useMemo(() => {
+    if (!selectedOpening) return 0
+    let total = 0
+    for (const g of games as any[]) {
+      const name = String(g?.opening?.name ?? 'Unknown')
+      if (name !== selectedOpening) continue
+      const analyzedMoves: any[] = Array.isArray((g as any)?.analysis) ? ((g as any).analysis as any[]) : []
+      const hasJudgments = analyzedMoves.some((mv) => mv?.judgment?.name)
+      const hasCp = analyzedMoves.some((mv) => typeof mv?.eval?.cp === 'number')
+      if (!hasJudgments && !hasCp) total += 1
+    }
+    return total
+  }, [games, selectedOpening])
+
   const filteredGames = useMemo(() => {
     if (!selectedOpening) return games
     return (games as any[]).filter((g) => String(g?.opening?.name ?? 'Unknown') === selectedOpening)
@@ -203,6 +218,30 @@ export default function Dashboard({
               aria-label="Reset opening filter"
             >
               Reset
+            </button>
+          )}
+          {selectedOpening && unevaluatedCountForSelected > 0 && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const payloadGames = games as any[]
+                  // Call backend to bootstrap only this opening
+                  const client = (await import('../lib/api')).apiClient
+                  const result = await client.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
+                  // Replace summary with bootstrapped summary
+                  // Note: this updates overall summary for display under current filter
+                  // Parent (App) passes summary; here we mimic an in-place refresh by re-rendering Dashboard with returned summary
+                  // Easiest path: fire a custom event App listens to in future; for now, provide a temporary UI-only update path:
+                  window.dispatchEvent(new CustomEvent('chutor:bootstrapped', { detail: { opening: selectedOpening, summary: result.summary } }))
+                } catch (e) {
+                  console.error('Bootstrap failed', e)
+                }
+              }}
+              className="ml-2 text-xs px-2 py-1 rounded border border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700"
+              title={`We found ${unevaluatedCountForSelected} unevaluated game(s) in this opening. Click to bootstrap from known positions.`}
+            >
+              Bootstrap this opening ({unevaluatedCountForSelected})
             </button>
           )}
         </div>
