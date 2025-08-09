@@ -113,36 +113,44 @@ export default function Dashboard({
   const activeSummary = useMemo(() => {
     // All openings → use backend summary directly (includes bootstrapped merges)
     if (!selectedOpening) return summary
-    // For a specific opening, derive a filtered view from the existing summary instead
+    // Recompute base metrics for this opening from the games themselves
+    const base = analyzeGames(filteredGames, { onlyForUsername: filterUsername })
+
+    // Merge in any bootstrapped mistakes for this opening from the global summary
     const gameIds = new Set((filteredGames as any[]).map((g) => String((g as any)?.id ?? '')))
-    const filteredMistakes = (summary.topMistakes || []).filter((m: any) => gameIds.has(String(m.gameId)))
-    const filteredBlunders = (summary.topBlunders || []).filter((b: any) => gameIds.has(String(b.gameId)))
+    const incomingBoot: any[] = (summary.topMistakes || []).filter(
+      (m: any) => gameIds.has(String(m.gameId)) && (m as any)?.bootstrapped,
+    )
+    if (incomingBoot.length === 0) return base
 
-    // Combine blunders from both sources (topMistakes may include bootstrapped blunders; topBlunders are measured)
-    const blunderKeys = new Set<string>()
-    for (const m of filteredMistakes) if (m.kind === 'blunder') blunderKeys.add(`${m.gameId}#${m.ply}`)
-    for (const b of filteredBlunders) blunderKeys.add(`${b.gameId}#${b.ply}`)
+    const existingKeys = new Set<string>(
+      (base.topMistakes || []).map((m: any) => `${m.gameId}#${m.ply}#${m.kind}`),
+    )
+    const toAdd = incomingBoot.filter(
+      (m: any) => !existingKeys.has(`${m.gameId}#${m.ply}#${m.kind}`),
+    )
 
-    const totals = {
-      inaccuracies: filteredMistakes.filter((m: any) => m.kind === 'inaccuracy').length,
-      mistakes: filteredMistakes.filter((m: any) => m.kind === 'mistake').length,
-      blunders: blunderKeys.size,
-    }
-    // Opening aggregates: count unique mistakes (all kinds) and measured blunders for this opening
-    const uniqueMistakeKeys = new Set<string>()
-    for (const m of filteredMistakes) uniqueMistakeKeys.add(`${m.gameId}#${m.ply}`)
-    const mistakesByOpening: Record<string, number> = { [selectedOpening]: uniqueMistakeKeys.size }
-    const uniqueMeasuredBlunderKeys = new Set<string>()
-    for (const b of filteredBlunders) uniqueMeasuredBlunderKeys.add(`${b.gameId}#${b.ply}`)
-    const blundersByOpening: Record<string, number> = { [selectedOpening]: uniqueMeasuredBlunderKeys.size }
+    const addedInacc = toAdd.filter((m: any) => m.kind === 'inaccuracy').length
+    const addedMist = toAdd.filter((m: any) => m.kind === 'mistake').length
+    const addedBlun = toAdd.filter((m: any) => m.kind === 'blunder').length
+
     return {
-      total: totals,
-      mistakesByOpening,
-      blundersByOpening,
-      topMistakes: filteredMistakes.slice().sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0)),
-      topBlunders: filteredBlunders.slice().sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0)),
+      total: {
+        inaccuracies: base.total.inaccuracies + addedInacc,
+        mistakes: base.total.mistakes + addedMist,
+        blunders: base.total.blunders + addedBlun,
+      },
+      mistakesByOpening: {
+        ...base.mistakesByOpening,
+        [selectedOpening]: (base.mistakesByOpening[selectedOpening] || 0) + toAdd.length,
+      },
+      blundersByOpening: base.blundersByOpening,
+      topMistakes: [...(base.topMistakes || []), ...toAdd].sort(
+        (a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0),
+      ),
+      topBlunders: base.topBlunders,
     } as AnalysisSummary
-  }, [selectedOpening, summary, filteredGames])
+  }, [selectedOpening, summary, filteredGames, filterUsername])
 
   const blunderTotalForPie = useMemo(() => {
     if (selectedOpening) return activeSummary.total.blunders
