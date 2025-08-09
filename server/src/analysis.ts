@@ -630,8 +630,11 @@ function analyzeGames(
         if (ply === 0) continue
         const agg = fenIndex.get(fen)
         if (!agg) continue
-        const moveNumber = Math.ceil(ply / 2)
+        // Apply only when mover in this game matches mover in the indexed label (side)
         const side: 'white' | 'black' = (ply % 2) === 1 ? 'white' : 'black'
+        const sameSide = side === (((agg.ply ?? ply) % 2) === 1 ? 'white' : 'black')
+        if (!sameSide) continue
+        const moveNumber = Math.ceil(ply / 2)
         if (agg.kind === 'blunder') {
           summary.total.blunders += 1
           summary.mistakesByOpening[opening] = (summary.mistakesByOpening[opening] ?? 0) + 1
