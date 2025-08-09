@@ -220,7 +220,7 @@ export default function Dashboard({
               Reset
             </button>
           )}
-          {selectedOpening && unevaluatedCountForSelected > 0 && (
+          {selectedOpening && (
             <button
               type="button"
               onClick={async () => {
@@ -229,19 +229,16 @@ export default function Dashboard({
                   // Call backend to bootstrap only this opening
                   const client = (await import('../lib/api')).apiClient
                   const result = await client.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
-                  // Replace summary with bootstrapped summary
-                  // Note: this updates overall summary for display under current filter
-                  // Parent (App) passes summary; here we mimic an in-place refresh by re-rendering Dashboard with returned summary
-                  // Easiest path: fire a custom event App listens to in future; for now, provide a temporary UI-only update path:
+                  // Update local view immediately by signaling App
                   window.dispatchEvent(new CustomEvent('chutor:bootstrapped', { detail: { opening: selectedOpening, summary: result.summary } }))
                 } catch (e) {
                   console.error('Bootstrap failed', e)
                 }
               }}
               className="ml-2 text-xs px-2 py-1 rounded border border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700"
-              title={`We found ${unevaluatedCountForSelected} unevaluated game(s) in this opening. Click to bootstrap from known positions.`}
+              title={unevaluatedCountForSelected > 0 ? `We found ${unevaluatedCountForSelected} unevaluated game(s) in this opening. Click to bootstrap from known positions.` : 'Bootstrap this opening from known positions'}
             >
-              Bootstrap this opening ({unevaluatedCountForSelected})
+              {`Bootstrap this opening${unevaluatedCountForSelected > 0 ? ` (${unevaluatedCountForSelected})` : ''}`}
             </button>
           )}
         </div>

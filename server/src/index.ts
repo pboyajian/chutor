@@ -31,7 +31,8 @@ app.get('/health', (req: any, res: any) => {
 // Parallel analysis with multiple workers
 async function analyzeWithParallelWorkers(games: any[], options: any = {}): Promise<any> {
   const numCPUs = os.cpus().length
-  const numWorkers = Math.min(numCPUs, 8) // Cap at 8 workers to avoid overhead
+  // If bootstrapping a specific opening, use a single worker so the index sees all games
+  const numWorkers = options?.bootstrapOpening ? 1 : Math.min(numCPUs, 8)
   const chunkSize = Math.ceil(games.length / numWorkers)
   
   console.log(`🔄 Starting parallel analysis with ${numWorkers} workers`)

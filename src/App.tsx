@@ -184,6 +184,9 @@ export default function App() {
     const handler = (e: any) => {
       const s = e?.detail?.summary
       if (s) setSummary(s)
+      // Optional: small UX feedback by toggling analyzing state briefly
+      setIsAnalyzing(true)
+      setTimeout(() => setIsAnalyzing(false), 300)
     }
     window.addEventListener('chutor:bootstrapped', handler as EventListener)
     return () => window.removeEventListener('chutor:bootstrapped', handler as EventListener)
