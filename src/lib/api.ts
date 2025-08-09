@@ -26,7 +26,10 @@ export class ApiClient {
     this.baseUrl = baseUrl
   }
 
-  async analyzeGames(games: LichessGame[], options: { onlyForUsername?: string } = {}): Promise<AnalysisResponse> {
+  async analyzeGames(
+    games: LichessGame[],
+    options: { onlyForUsername?: string; bootstrapOpening?: string } = {},
+  ): Promise<AnalysisResponse> {
     const response = await fetch(`${this.baseUrl}/api/analyze`, {
       method: 'POST',
       headers: {
