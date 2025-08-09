@@ -68,6 +68,7 @@ self.onmessage = (evt: MessageEvent) => {
     bestSan?: string
     opening: string
     fen: string
+    bootstrapped?: boolean
   }> = []
 
   const counts: Record<string, number> = {}
@@ -91,7 +92,10 @@ self.onmessage = (evt: MessageEvent) => {
 
     // Prepare needed plies
     const neededPlies = new Set<number>()
-    for (const b of group) neededPlies.add((b.moveNumber - 1) * 2)
+    for (const b of group) {
+      const ply = typeof b.ply === 'number' && b.ply > 0 ? b.ply : Math.max(1, (b.moveNumber - 1) * 2 + 1)
+      neededPlies.add(ply)
+    }
 
     // Parse PGN once (fallback gracefully if missing)
     const pgnRaw: string | undefined = (game?.pgn?.raw as string) ?? (typeof game?.pgn === 'string' ? game.pgn : undefined)
@@ -131,14 +135,14 @@ self.onmessage = (evt: MessageEvent) => {
     const analyzed = Array.isArray(game?.analysis) ? (game.analysis as any[]) : []
 
     for (const b of group) {
-      const ply = (b.moveNumber - 1) * 2
-      const idx = Math.max(0, Math.min(verbose.length - 1, ply))
+      const ply = typeof b.ply === 'number' && b.ply > 0 ? b.ply : Math.max(1, (b.moveNumber - 1) * 2 + 1)
+      const idx = Math.max(0, Math.min(verbose.length - 1, ply - 1))
       const playedSan = verbose[idx]?.san
 
-      // best SAN from UCI/comment if available
-      const targetPly = ((b.moveNumber * 2 - 1) % 2 === 1) ? b.moveNumber * 2 - 1 : b.moveNumber * 2
+      // best SAN from UCI/comment if available (use same ply)
+      const targetPly = ply
       const mv = analyzed.find((m: any) => typeof m?.ply === 'number' && m.ply === targetPly)
-      const prevFen = fenAtPly.get(targetPly - 1) || fenAtPly.get(ply) || temp.fen()
+      const prevFen = fenAtPly.get(targetPly - 1) || temp.fen()
       let bestSan: string | undefined
       const uci: string | undefined = (mv?.best as string) || (mv?.uciBest as string) || undefined
       if (uci) bestSan = toUciSan(prevFen, uci)

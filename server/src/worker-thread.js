@@ -12,16 +12,14 @@ if (parentPort) {
         console.log(`🔧 Worker ${workerId}: Starting analysis of ${games.length} games`)
         
         // Auto-detect username if not provided
-        const targetUsername = options.onlyForUsername || deriveUsernameFromGames(games)
+        const targetUsername = options?.onlyForUsername || deriveUsernameFromGames(games)
         if (targetUsername) {
           console.log(`👤 Worker ${workerId}: Detected username: ${targetUsername}`)
         }
         
         // Perform analysis with progress reporting
-        const analysisOptions = {}
-        if (targetUsername) {
-          analysisOptions.onlyForUsername = targetUsername
-        }
+        const analysisOptions = { ...(options || {}) }
+        if (targetUsername) analysisOptions.onlyForUsername = targetUsername
         
         console.log(`⚙️  Worker ${workerId}: Analyzing games...`)
         const summary = analyzeGames(games, analysisOptions)

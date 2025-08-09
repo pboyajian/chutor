@@ -56,10 +56,25 @@ export default function MistakeList({
       workerRef.current = null
     }
 
-    // Prepare the source list once (topMistakes if present, otherwise topBlunders tagged as blunders)
-    const source: any[] = hasTopMistakes
-      ? (summary as any).topMistakes
-      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
+    // Prepare the source list once: merge topMistakes (all kinds) with measured topBlunders
+    // Deduplicate by (gameId, ply), preferring the topMistakes entry if both present
+    const merged: any[] = []
+    const seen = new Set<string>()
+    const tm: any[] = Array.isArray((summary as any).topMistakes) ? (summary as any).topMistakes : []
+    for (const m of tm) {
+      const key = `${String(m.gameId)}#${Number(m.ply)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(m)
+    }
+    const tb: any[] = Array.isArray((summary as any).topBlunders) ? (summary as any).topBlunders : []
+    for (const b of tb) {
+      const key = `${String(b.gameId)}#${Number(b.ply)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push({ ...b, kind: 'blunder' as const })
+    }
+    const source: any[] = merged
     const submitted = Array.isArray(source) ? source : []
     setProgress({ processed: 0, total: submitted.length })
 
@@ -129,6 +144,7 @@ export default function MistakeList({
       moveNumber: Number(it.moveNumber),
       centipawnLoss: typeof it.centipawnLoss === 'number' ? it.centipawnLoss : undefined,
       kind: it.kind as 'inaccuracy' | 'mistake' | 'blunder' | undefined,
+      bootstrapped: Boolean(it.bootstrapped),
       playedSan: it.playedSan as string | undefined,
       bestSan: it.bestSan as string | undefined,
       opening: String(it.opening ?? 'Unknown'),
@@ -251,12 +267,17 @@ export default function MistakeList({
                     )}
                   </div>
                 </div>
-                <div className="text-right">
+                 <div className="text-right">
                   {item.kind && (
                     <div className={`text-[10px] uppercase tracking-wide mb-1 inline-block px-1.5 py-0.5 rounded ${item.kind === 'blunder' ? 'bg-red-700/40 text-red-200' : item.kind === 'mistake' ? 'bg-amber-700/40 text-amber-200' : 'bg-sky-700/40 text-sky-200'}`}>{item.kind}</div>
                   )}
-                  {typeof item.centipawnLoss === 'number' && (
+                   {item.bootstrapped && (
+                     <div className="text-[10px] uppercase tracking-wide mb-1 inline-block px-1 py-0.5 rounded border border-slate-600 text-slate-300/90">bootstrapped</div>
+                   )}
+                  {typeof item.centipawnLoss === 'number' ? (
                     <div className="text-sm tabular-nums text-gray-300">Δcp: {item.centipawnLoss}</div>
+                  ) : (
+                    <div className="text-xs text-gray-500" title={item.bootstrapped ? 'Δcp estimated from similar positions' : 'Δcp unavailable'}>Δcp: —</div>
                   )}
                   <div className="text-xs text-gray-400">×{item.frequency}</div>
                 </div>

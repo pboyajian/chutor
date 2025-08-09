@@ -37,6 +37,7 @@ export interface AnalysisSummary {
     side: 'white' | 'black'
     centipawnLoss?: number
     kind: 'inaccuracy' | 'mistake' | 'blunder'
+    bootstrapped?: boolean
   }>
 }
 
@@ -44,6 +45,7 @@ export interface AnalysisRequest {
   games: LichessGame[]
   options: {
     onlyForUsername?: string
+    bootstrapOpening?: string
   }
 }
 

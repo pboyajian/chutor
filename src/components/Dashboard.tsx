@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import analyzeGames, { type AnalysisSummary } from '../lib/analysis'
+import { apiClient } from '../lib/api'
 import type { LichessGame } from '../lib/lichess'
 import MistakeList from './MistakeList'
 import ChessboardDisplay from './ChessboardDisplay'
@@ -37,11 +38,32 @@ export default function Dashboard({
   const [copied, setCopied] = useState<boolean>(false)
   const [selectedMeta, setSelectedMeta] = useState<{ gameId: string; moveNumber: number } | null>(null)
   const [selectedOpening, setSelectedOpening] = useState<string | null>(null)
+  const [isBootstrapping, setIsBootstrapping] = useState(false)
+  const [bootstrappedOpenings, setBootstrappedOpenings] = useState<Set<string>>(new Set())
   
   // Reset selected opening when games change
   useEffect(() => {
     setSelectedOpening(null)
   }, [games])
+  // Reset spinner when opening changes, but keep which openings were bootstrapped
+  useEffect(() => {
+    setIsBootstrapping(false)
+  }, [selectedOpening])
+
+  // Mark opening as bootstrapped when the App broadcasts completion
+  useEffect(() => {
+    const handler = (evt: any) => {
+      const opening = String(evt?.detail?.opening ?? '')
+      if (!opening) return
+      setBootstrappedOpenings((prev) => {
+        const next = new Set(prev)
+        next.add(opening)
+        return next
+      })
+    }
+    window.addEventListener('chutor:bootstrapped', handler as EventListener)
+    return () => window.removeEventListener('chutor:bootstrapped', handler as EventListener)
+  }, [])
   const orientation: 'white' | 'black' = useMemo(() => {
     const parts = selectedFen.split(' ')
     return parts[1] === 'b' ? 'black' : 'white'
@@ -68,16 +90,66 @@ export default function Dashboard({
       .map(([name, count]) => ({ name, count }))
   }, [games])
 
+  // Estimate unevaluated game count for the selected opening
+  const unevaluatedCountForSelected = useMemo(() => {
+    if (!selectedOpening) return 0
+    let total = 0
+    for (const g of games as any[]) {
+      const name = String(g?.opening?.name ?? 'Unknown')
+      if (name !== selectedOpening) continue
+      const analyzedMoves: any[] = Array.isArray((g as any)?.analysis) ? ((g as any).analysis as any[]) : []
+      const hasJudgments = analyzedMoves.some((mv) => mv?.judgment?.name)
+      const hasCp = analyzedMoves.some((mv) => typeof mv?.eval?.cp === 'number')
+      if (!hasJudgments && !hasCp) total += 1
+    }
+    return total
+  }, [games, selectedOpening])
+
   const filteredGames = useMemo(() => {
     if (!selectedOpening) return games
     return (games as any[]).filter((g) => String(g?.opening?.name ?? 'Unknown') === selectedOpening)
   }, [games, selectedOpening])
 
   const activeSummary = useMemo(() => {
-    // For "All openings", use the provided summary to keep numbers consistent
-    // with the backend/worker totals (and avoid recomputation differences).
+    // All openings → use backend summary directly (includes bootstrapped merges)
     if (!selectedOpening) return summary
-    return analyzeGames(filteredGames, { onlyForUsername: filterUsername })
+    // Recompute base metrics for this opening from the games themselves
+    const base = analyzeGames(filteredGames, { onlyForUsername: filterUsername })
+
+    // Merge in any bootstrapped mistakes for this opening from the global summary
+    const gameIds = new Set((filteredGames as any[]).map((g) => String((g as any)?.id ?? '')))
+    const incomingBoot: any[] = (summary.topMistakes || []).filter(
+      (m: any) => gameIds.has(String(m.gameId)) && (m as any)?.bootstrapped,
+    )
+    if (incomingBoot.length === 0) return base
+
+    const existingKeys = new Set<string>(
+      (base.topMistakes || []).map((m: any) => `${m.gameId}#${m.ply}#${m.kind}`),
+    )
+    const toAdd = incomingBoot.filter(
+      (m: any) => !existingKeys.has(`${m.gameId}#${m.ply}#${m.kind}`),
+    )
+
+    const addedInacc = toAdd.filter((m: any) => m.kind === 'inaccuracy').length
+    const addedMist = toAdd.filter((m: any) => m.kind === 'mistake').length
+    const addedBlun = toAdd.filter((m: any) => m.kind === 'blunder').length
+
+    return {
+      total: {
+        inaccuracies: base.total.inaccuracies + addedInacc,
+        mistakes: base.total.mistakes + addedMist,
+        blunders: base.total.blunders + addedBlun,
+      },
+      mistakesByOpening: {
+        ...base.mistakesByOpening,
+        [selectedOpening]: (base.mistakesByOpening[selectedOpening] || 0) + toAdd.length,
+      },
+      blundersByOpening: base.blundersByOpening,
+      topMistakes: [...(base.topMistakes || []), ...toAdd].sort(
+        (a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0),
+      ),
+      topBlunders: base.topBlunders,
+    } as AnalysisSummary
   }, [selectedOpening, summary, filteredGames, filterUsername])
 
   const blunderTotalForPie = useMemo(() => {
@@ -203,6 +275,41 @@ export default function Dashboard({
               aria-label="Reset opening filter"
             >
               Reset
+            </button>
+          )}
+          {selectedOpening && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  setIsBootstrapping(true)
+                  const payloadGames = games as any[]
+                  // Call backend to bootstrap only this opening
+                  const result = await apiClient.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
+                  // Update local view immediately by signaling App
+                  window.dispatchEvent(new CustomEvent('chutor:bootstrapped', { detail: { opening: selectedOpening, summary: result.summary } }))
+                  if (selectedOpening) {
+                    setBootstrappedOpenings((prev) => {
+                      const next = new Set(prev)
+                      next.add(selectedOpening)
+                      return next
+                    })
+                  }
+                  setIsBootstrapping(false)
+                } catch (e) {
+                  console.error('Bootstrap failed', e)
+                  setIsBootstrapping(false)
+                }
+              }}
+              disabled={isBootstrapping}
+              className={`ml-2 text-xs px-2 py-1 rounded border ${isBootstrapping ? 'opacity-60 cursor-wait border-slate-700 text-gray-400 bg-slate-800/40' : (selectedOpening && bootstrappedOpenings.has(selectedOpening)) ? 'border-green-700 text-green-300 bg-green-900/20' : 'border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700'}`}
+              title={unevaluatedCountForSelected > 0 ? `We found ${unevaluatedCountForSelected} unevaluated game(s) in this opening. Click to bootstrap from known positions.` : 'Bootstrap this opening from known positions'}
+            >
+              {isBootstrapping
+                ? 'Bootstrapping…'
+                : (selectedOpening && bootstrappedOpenings.has(selectedOpening))
+                ? 'Bootstrapped!'
+                : `Bootstrap this opening${unevaluatedCountForSelected > 0 ? ` (${unevaluatedCountForSelected})` : ''}`}
             </button>
           )}
         </div>

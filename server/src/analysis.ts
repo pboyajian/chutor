@@ -153,6 +153,7 @@ function analyzeGamesWithPrecomputedData(
   }
 
   const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
+  const restrictOpening: string | undefined = (options as any)?.bootstrapOpening
   const totalGames = games.length
   let processedGames = 0
   const logInterval = Math.max(1, Math.floor(totalGames / 10))
@@ -167,6 +168,10 @@ function analyzeGamesWithPrecomputedData(
     }
     
     const openingName = String((game as any)?.opening?.name ?? 'Unknown')
+    // Skip non-target openings entirely when bootstrapping to avoid any cost
+    if (restrictOpening && openingName !== restrictOpening) {
+      continue
+    }
     const analyzedMoves: any[] = Array.isArray((game as any)?.analysis)
       ? ((game as any).analysis as any[])
       : []
@@ -397,6 +402,7 @@ function analyzeGames(
     mistakesByOpening: {},
     blundersByOpening: {},
     topBlunders: [],
+    topMistakes: [],
   }
 
   const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
@@ -405,6 +411,13 @@ function analyzeGames(
   const logInterval = Math.max(1, Math.floor(totalGames / 10))
 
   console.log(`🎮 Starting analysis of ${totalGames} games...`)
+  const restrictOpening: string | undefined = (options as any)?.bootstrapOpening
+
+  // Maps and collections for bootstrapping
+  const openingByGame: Map<string, string> = new Map()
+  const positionsByGame: Map<string, Map<number, string>> = new Map()
+  type RawLabel = { gameId: string; moveNumber: number; ply: number; side: 'white' | 'black'; kind: 'inaccuracy' | 'mistake' | 'blunder'; cp?: number; opening: string }
+  const rawLabels: RawLabel[] = []
 
   for (const game of games) {
     processedGames++
@@ -415,6 +428,8 @@ function analyzeGames(
     }
     
     const openingName = String((game as any)?.opening?.name ?? 'Unknown')
+    const gid = String((game as any)?.id ?? '')
+    if (gid) openingByGame.set(gid, openingName)
     const analyzedMoves: any[] = Array.isArray((game as any)?.analysis)
       ? ((game as any).analysis as any[])
       : []
@@ -461,9 +476,11 @@ function analyzeGames(
       if (name === 'inaccuracy') {
         summary.total.inaccuracies += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        rawLabels.push({ gameId: String((game as any)?.id ?? ''), moveNumber, ply: plyValue, side: plyValue % 2 === 1 ? 'white' : 'black', kind: 'inaccuracy', cp: typeof centipawnLoss === 'number' ? centipawnLoss : undefined, opening: key })
       } else if (name === 'mistake') {
         summary.total.mistakes += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
+        rawLabels.push({ gameId: String((game as any)?.id ?? ''), moveNumber, ply: plyValue, side: plyValue % 2 === 1 ? 'white' : 'black', kind: 'mistake', cp: typeof centipawnLoss === 'number' ? centipawnLoss : undefined, opening: key })
       } else if (name === 'blunder') {
         summary.total.blunders += 1
         summary.mistakesByOpening[key] = (summary.mistakesByOpening[key] ?? 0) + 1
@@ -475,6 +492,7 @@ function analyzeGames(
           side: plyValue % 2 === 1 ? 'white' : 'black',
           ...(centipawnLoss !== undefined && { centipawnLoss })
         })
+        rawLabels.push({ gameId: String((game as any)?.id ?? ''), moveNumber, ply: plyValue, side: plyValue % 2 === 1 ? 'white' : 'black', kind: 'blunder', cp: typeof centipawnLoss === 'number' ? centipawnLoss : undefined, opening: key })
       }
     })
 
@@ -507,20 +525,156 @@ function analyzeGames(
             side: plyValue % 2 === 1 ? 'white' : 'black',
             ...(delta > 0 && { centipawnLoss: delta })
           })
+          rawLabels.push({ gameId: String((game as any)?.id ?? ''), moveNumber, ply: plyValue, side: plyValue % 2 === 1 ? 'white' : 'black', kind: 'blunder', cp: delta > 0 ? delta : undefined, opening: openingName })
         } else if (delta >= 150) {
           summary.total.mistakes += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          rawLabels.push({ gameId: String((game as any)?.id ?? ''), moveNumber, ply: plyValue, side: plyValue % 2 === 1 ? 'white' : 'black', kind: 'mistake', cp: delta > 0 ? delta : undefined, opening: openingName })
         } else if (delta >= 60) {
           summary.total.inaccuracies += 1
           summary.mistakesByOpening[openingName] = (summary.mistakesByOpening[openingName] ?? 0) + 1
+          rawLabels.push({ gameId: String((game as any)?.id ?? ''), moveNumber, ply: plyValue, side: plyValue % 2 === 1 ? 'white' : 'black', kind: 'inaccuracy', cp: delta > 0 ? delta : undefined, opening: openingName })
         }
       }
     }
   }
 
+  if (restrictOpening) {
+    // Precompute FEN positions only for evaluated games (for index) and unevaluated games in the selected opening (for matching)
+    console.log(`🔄 Precomputing FEN positions for bootstrapping (opening: ${restrictOpening})...`)
+    const tPreStart = Date.now()
+    const gameById: Map<string, any> = new Map()
+    for (const g of games as any[]) {
+      const gid2 = String(g?.id ?? '')
+      if (gid2) gameById.set(gid2, g)
+    }
+    const evaluatedGameIds = new Set<string>()
+    for (const lbl of rawLabels) evaluatedGameIds.add(lbl.gameId)
+    let evaluatedPositions = 0
+    for (const gid2 of evaluatedGameIds) {
+      const g = gameById.get(gid2)
+      if (!g) continue
+      try {
+        positionsByGame.set(gid2, computePositions(g))
+        evaluatedPositions++
+      } catch {}
+    }
+    let unevaluatedPositions = 0
+    for (const g of games as any[]) {
+      const gid2 = String(g?.id ?? '')
+      if (!gid2) continue
+      const opening = openingByGame.get(gid2) || 'Unknown'
+      if (opening !== restrictOpening) continue
+      const analyzedMoves: any[] = Array.isArray((g as any)?.analysis) ? ((g as any).analysis as any[]) : []
+      const hasJudgments = analyzedMoves.some((mv) => mv?.judgment?.name)
+      const hasCp = analyzedMoves.some((mv) => typeof mv?.eval?.cp === 'number')
+      if (hasJudgments || hasCp) continue
+      try {
+        positionsByGame.set(gid2, computePositions(g))
+        unevaluatedPositions++
+      } catch {}
+    }
+    console.log(`✅ Precomputed positions: evaluated=${evaluatedPositions}, unevaluated(${restrictOpening})=${unevaluatedPositions} in ${Date.now() - tPreStart}ms`)
+
+    // Build FEN -> aggregated label index from evaluated plies only
+    console.log('🗂️  Building position-to-mistake index...')
+    type Kind = 'inaccuracy' | 'mistake' | 'blunder'
+    type Aggregated = { kind: Kind; moveNumber: number; ply: number; opening: string; cp?: number; frequency: number }
+    const severityRank = (k: Kind) => (k === 'blunder' ? 3 : k === 'mistake' ? 2 : 1)
+    const fenIndex: Map<string, Aggregated> = new Map()
+    let evaluatedPliesIndexed = 0
+    for (const lbl of rawLabels) {
+      if (restrictOpening && lbl.opening !== restrictOpening) continue
+      const pos = positionsByGame.get(lbl.gameId)
+      if (!pos) continue
+      const fen = pos.get(lbl.ply)
+      if (!fen) continue
+      evaluatedPliesIndexed++
+      const existing = fenIndex.get(fen)
+      if (!existing) {
+        fenIndex.set(fen, { kind: lbl.kind, moveNumber: lbl.moveNumber, ply: lbl.ply, opening: lbl.opening, cp: lbl.cp, frequency: 1 })
+      } else {
+        existing.frequency += 1
+        if (severityRank(lbl.kind) > severityRank(existing.kind)) {
+          existing.kind = lbl.kind
+          existing.moveNumber = lbl.moveNumber
+          existing.ply = lbl.ply
+          existing.opening = lbl.opening
+        }
+        if (typeof lbl.cp === 'number' && (typeof existing.cp !== 'number' || lbl.cp > (existing.cp ?? 0))) {
+          existing.cp = lbl.cp
+        }
+      }
+    }
+    console.log(`✅ Indexed ${evaluatedPliesIndexed} evaluated plies across ${fenIndex.size} unique positions`)
+
+    // Helper to detect whether a game already has any evaluation/judgment
+    const gameIsEvaluated = (game: any): boolean => {
+      const analyzedMoves: any[] = Array.isArray((game as any)?.analysis)
+        ? ((game as any).analysis as any[])
+        : []
+      if (analyzedMoves.some((mv) => mv?.judgment?.name)) return true
+      if (analyzedMoves.some((mv) => typeof mv?.eval?.cp === 'number')) return true
+      return false
+    }
+
+    // Apply bootstrapped matches to unevaluated games in the selected opening
+    console.log(`🔎 Applying bootstrapped matches to unevaluated games (only opening: ${restrictOpening})...`)
+    const tBootStart = Date.now()
+    let appliedInacc = 0
+    let appliedMist = 0
+    let appliedBlun = 0
+    for (const game of games) {
+      if (gameIsEvaluated(game)) continue
+      const gid3 = String((game as any)?.id ?? '')
+      if (!gid3) continue
+      const opening = openingByGame.get(gid3) || 'Unknown'
+      if (opening !== restrictOpening) continue
+      const pos = positionsByGame.get(gid3)
+      if (!pos) continue
+      for (const [ply, fen] of pos.entries()) {
+        if (ply === 0) continue
+        const agg = fenIndex.get(fen)
+        if (!agg) continue
+        // Apply only when mover in this game matches mover in the indexed label (side)
+        const side: 'white' | 'black' = (ply % 2) === 1 ? 'white' : 'black'
+        const sameSide = side === (((agg.ply ?? ply) % 2) === 1 ? 'white' : 'black')
+        if (!sameSide) continue
+        const moveNumber = Math.ceil(ply / 2)
+        if (agg.kind === 'blunder') {
+          summary.total.blunders += 1
+          summary.mistakesByOpening[opening] = (summary.mistakesByOpening[opening] ?? 0) + 1
+          summary.blundersByOpening[opening] = (summary.blundersByOpening[opening] ?? 0) + 1
+          appliedBlun += 1
+        } else if (agg.kind === 'mistake') {
+          summary.total.mistakes += 1
+          summary.mistakesByOpening[opening] = (summary.mistakesByOpening[opening] ?? 0) + 1
+          appliedMist += 1
+        } else {
+          summary.total.inaccuracies += 1
+          summary.mistakesByOpening[opening] = (summary.mistakesByOpening[opening] ?? 0) + 1
+          appliedInacc += 1
+        }
+        summary.topMistakes.push({
+          gameId: gid3,
+          moveNumber,
+          ply,
+          side,
+          ...(typeof agg.cp === 'number' ? { centipawnLoss: agg.cp } : {}),
+          kind: agg.kind,
+          bootstrapped: true,
+        })
+      }
+    }
+    console.log(`✅ Bootstrapped applied: blunders=${appliedBlun}, mistakes=${appliedMist}, inaccuracies=${appliedInacc} in ${Date.now() - tBootStart}ms`)
+  }
+
   console.log(`🎯 Analysis complete! Found ${summary.total.blunders} blunders, ${summary.total.mistakes} mistakes, ${summary.total.inaccuracies} inaccuracies`)
   
   summary.topBlunders.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  if (Array.isArray(summary.topMistakes)) {
+    summary.topMistakes.sort((a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+  }
   return summary
 }
 
