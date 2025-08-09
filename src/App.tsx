@@ -229,9 +229,7 @@ export default function App() {
         }
         return next
       })
-      // Small UX pulse
-      setIsAnalyzing(true)
-      setTimeout(() => setIsAnalyzing(false), 300)
+      // Keep UI stable; do not toggle analyzing to avoid remounting Dashboard
     }
     window.addEventListener('chutor:bootstrapped', handler as EventListener)
     return () => window.removeEventListener('chutor:bootstrapped', handler as EventListener)
