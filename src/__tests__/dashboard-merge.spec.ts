@@ -30,6 +30,21 @@ describe('Per-opening merge for pie totals', () => {
     const combinedTotal = summaryWithBoot.topMistakes.filter((m: any) => m.kind === 'mistake').length
     expect(combinedTotal).toBe(2)
   })
+
+  it('performance guard: synthetic merge up to ~2500 completes quickly (logic-only)', async () => {
+    const big: Game[] = []
+    for (let i = 0; i < 2500; i++) {
+      big.push(mk(String(i), 'OpZ', [{ ply: 1, judgment: { name: i % 2 ? 'blunder' : 'mistake', cp: 200 } }]))
+    }
+    const t0 = performance.now()
+    const base = analyzeGames(big)
+    const t1 = performance.now()
+    // sanity
+    expect(base.total.mistakes + base.total.blunders + base.total.inaccuracies).toBeGreaterThan(0)
+    const elapsed = t1 - t0
+    // CI-friendly loose bound
+    expect(elapsed).toBeLessThan(2000)
+  })
 })
 
 

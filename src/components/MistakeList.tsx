@@ -35,20 +35,38 @@ export default function MistakeList({
 
   // Kick off worker when inputs change
   useEffect(() => {
-    const hasTopMistakes = Array.isArray((summary as any)?.topMistakes) && (summary as any).topMistakes.length > 0
-    const hasTopBlunders = Array.isArray((summary as any)?.topBlunders) && (summary as any).topBlunders.length > 0
-    if ((!hasTopMistakes && !hasTopBlunders) || !games?.length) {
+    const tm: any[] = Array.isArray((summary as any)?.topMistakes) ? (summary as any).topMistakes : []
+    const tbRaw: any[] = Array.isArray((summary as any)?.topBlunders) ? (summary as any).topBlunders : []
+    // Prepare the source list once: merge topMistakes (all kinds) with measured topBlunders
+    // Deduplicate by (gameId, ply), preferring the topMistakes entry if both present
+    const merged: any[] = []
+    const seen = new Set<string>()
+    for (const m of tm) {
+      const key = `${String(m.gameId)}#${Number(m.ply)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(m)
+    }
+    for (const b of tbRaw) {
+      const key = `${String(b.gameId)}#${Number(b.ply)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push({ ...b, kind: 'blunder' as const })
+    }
+    const submitted = merged
+
+    if (!games?.length || submitted.length === 0) {
       setPreparedItems([])
       setRecurringPatterns([])
       setIsPreparing(false)
       setProgress(null)
       return
     }
+
     setIsPreparing(true)
     setPreparedItems([])
     setRecurringPatterns([])
-    const totalCount = hasTopMistakes ? (summary as any).topMistakes.length : (summary as any).topBlunders.length
-    setProgress({ processed: 0, total: totalCount })
+    setProgress({ processed: 0, total: submitted.length })
 
     // Terminate any existing worker
     if (workerRef.current) {
@@ -56,38 +74,20 @@ export default function MistakeList({
       workerRef.current = null
     }
 
-    // Prepare the source list once: merge topMistakes (all kinds) with measured topBlunders
-    // Deduplicate by (gameId, ply), preferring the topMistakes entry if both present
-    const merged: any[] = []
-    const seen = new Set<string>()
-    const tm: any[] = Array.isArray((summary as any).topMistakes) ? (summary as any).topMistakes : []
-    for (const m of tm) {
-      const key = `${String(m.gameId)}#${Number(m.ply)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      merged.push(m)
-    }
-    const tb: any[] = Array.isArray((summary as any).topBlunders) ? (summary as any).topBlunders : []
-    for (const b of tb) {
-      const key = `${String(b.gameId)}#${Number(b.ply)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      merged.push({ ...b, kind: 'blunder' as const })
-    }
-    const source: any[] = merged
-    const submitted = Array.isArray(source) ? source : []
-    setProgress({ processed: 0, total: submitted.length })
-
     const w = new Worker(new URL('../workers/mistakeDetails.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = w
     w.onmessage = (evt: MessageEvent) => {
       const { type, data } = evt.data || {}
       if (type === 'progress') {
-        setProgress((prev) => ({ processed: data?.processed ?? (prev?.processed ?? 0), total: prev?.total ?? summary.topMistakes.length }))
+        setProgress((prev) => ({ processed: data?.processed ?? (prev?.processed ?? 0), total: prev?.total ?? submitted.length }))
         return
       }
       if (type === 'result') {
         const workerItems = Array.isArray(data.items) ? data.items : []
+        if ((import.meta as any).env?.DEV) {
+          // Instrumentation: worker latency
+          console.log(`Recurrence worker: items=${workerItems.length} elapsed=${Math.round(Number(data?.elapsed ?? 0))}ms`)
+        }
         if (workerItems.length === 0 && Array.isArray(submitted) && submitted.length > 0) {
           // Fallback: synthesize minimal items so the list is not empty
           const quick = submitted.map((m: any) => {
@@ -104,10 +104,22 @@ export default function MistakeList({
             }
           })
           setPreparedItems(quick)
+          // Synthesize a minimal recurringPatterns list grouped by opening when worker produced none
+          const counts = new Map<string, number>()
+          const sampleByOpening = new Map<string, { gameId: string; moveNumber: number }>()
+          for (const q of quick) {
+            const key = q.opening
+            counts.set(key, (counts.get(key) ?? 0) + 1)
+            if (!sampleByOpening.has(key)) sampleByOpening.set(key, { gameId: q.gameId, moveNumber: q.moveNumber })
+          }
+          const synthesized = Array.from(counts.entries())
+            .map(([opening, count]) => ({ key: `${opening}||—`, count, opening, move: '—', sample: sampleByOpening.get(opening)! }))
+            .sort((a, b) => b.count - a.count)
+          setRecurringPatterns(synthesized)
         } else {
           setPreparedItems(workerItems)
+          setRecurringPatterns(data.recurringPatterns || [])
         }
-        setRecurringPatterns(data.recurringPatterns || [])
         setIsPreparing(false)
         setProgress(null)
         w.terminate()
@@ -122,7 +134,7 @@ export default function MistakeList({
     }
 
     if ((import.meta as any).env?.DEV) {
-      console.log('[MistakeList] sending to worker:', { items: submitted.length, hasTopMistakes, hasTopBlunders })
+      console.log('[MistakeList] sending to worker:', { items: submitted.length })
     }
     const payload = {
       games,

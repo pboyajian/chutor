@@ -20,6 +20,7 @@ export default function App() {
   const [debugLogs, setDebugLogs] = useState<Array<{ message: string; timestamp: number; data?: any }>>([])
   const [debugPanelVisible, setDebugPanelVisible] = useState(false)
   const debugScrollRef = useRef<HTMLDivElement>(null)
+  const appStartRef = useRef<number>(performance.now())
 
   function extractGameNames(game: any): { white?: string; black?: string } {
     const fromPgn = (raw?: string, tag?: string): string | undefined => {
@@ -131,6 +132,16 @@ export default function App() {
       setIsAnalyzing(false)
     }
   }
+
+  useEffect(() => {
+    // DEV-only instrumentation: log when Dashboard becomes visible
+    if ((import.meta as any).env?.DEV) {
+      if (!isLoading && !isAnalyzing && !error && summary) {
+        const elapsed = Math.round(performance.now() - appStartRef.current)
+        console.log(`Dashboard mount: ${elapsed}ms`)
+      }
+    }
+  }, [isLoading, isAnalyzing, error, summary])
 
   useEffect(() => {
     const onUpload = (e: any) => {
