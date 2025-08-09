@@ -24,6 +24,14 @@ export function analyzeGames(
   games: LichessGame[],
   options: { onlyForUsername?: string } = {},
 ): AnalysisSummary {
+  // Filter out Chess960/variants
+  const filteredGames = (games as any[]).filter((g) => {
+    const variant = String((g as any)?.variant || (g as any)?.variantName || '').toLowerCase()
+    if (!variant) return true
+    // Treat undefined/standard/classical as valid
+    return !variant.includes('chess960') && !variant.includes('antichess') && !variant.includes('fromposition')
+  }) as unknown as LichessGame[]
+
   const summary: AnalysisSummary = {
     total: { inaccuracies: 0, mistakes: 0, blunders: 0 },
     mistakesByOpening: {},
@@ -34,8 +42,12 @@ export function analyzeGames(
 
   const normalizedTarget = options.onlyForUsername?.trim().toLowerCase() || ''
 
-  for (const game of games) {
+  for (const game of filteredGames) {
     const openingName = String((game as any)?.opening?.name ?? 'Unknown')
+    if (openingName.trim() === '?') {
+      // Skip ambiguous/unknown ECO names
+      continue
+    }
     const analyzedMoves: any[] = Array.isArray((game as any)?.analysis)
       ? ((game as any).analysis as any[])
       : []

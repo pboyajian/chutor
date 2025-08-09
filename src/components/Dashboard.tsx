@@ -81,10 +81,14 @@ export default function Dashboard({
   const openings = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const g of games as any[]) {
-      const name = String(g?.opening?.name ?? 'Unknown')
+      const raw = String(g?.opening?.name ?? 'Unknown')
+      const name = raw.trim() === '?' ? 'Unknown' : raw
+      if (name.trim() === '?') continue
       counts[name] = (counts[name] ?? 0) + 1
     }
-    console.log('Dashboard: Available openings from loaded games:', counts)
+    if ((import.meta as any).env?.DEV) {
+      console.log('Dashboard: Available openings from loaded games:', counts)
+    }
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => ({ name, count }))
@@ -283,11 +287,16 @@ export default function Dashboard({
               onClick={async () => {
                 try {
                   setIsBootstrapping(true)
+                  const t0 = (import.meta as any).env?.DEV ? performance.now() : 0
                   const payloadGames = games as any[]
                   // Call backend to bootstrap only this opening
                   const result = await apiClient.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
                   // Update local view immediately by signaling App
                   window.dispatchEvent(new CustomEvent('chutor:bootstrapped', { detail: { opening: selectedOpening, summary: result.summary } }))
+                  if ((import.meta as any).env?.DEV) {
+                    const elapsed = Math.round(performance.now() - t0)
+                    console.log(`Bootstrap: opening=${selectedOpening} elapsed=${elapsed}ms`)
+                  }
                   if (selectedOpening) {
                     setBootstrappedOpenings((prev) => {
                       const next = new Set(prev)
