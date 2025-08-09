@@ -182,9 +182,54 @@ export default function App() {
   // Listen for bootstrapped summary update (from Dashboard action)
   useEffect(() => {
     const handler = (e: any) => {
-      const s = e?.detail?.summary
-      if (s) setSummary(s)
-      // Optional: small UX feedback by toggling analyzing state briefly
+      const s = e?.detail?.summary as AnalysisSummary | undefined
+      const openingFromEvent: string | undefined = e?.detail?.opening as string | undefined
+      if (!s) return
+      setSummary((prev) => {
+        if (!prev) return s
+        const existing = prev
+        const incoming = s
+        const boot = Array.isArray(incoming.topMistakes)
+          ? incoming.topMistakes.filter((m: any) => (m as any)?.bootstrapped)
+          : []
+        if (boot.length === 0) return existing
+        // Deduplicate against existing topMistakes
+        const existingKeys = new Set(
+          (existing.topMistakes || []).map((m: any) => `${m.gameId}#${m.ply}#${m.kind}#${m.centipawnLoss ?? ''}#${(m as any).bootstrapped ? 'b' : 'r'}`),
+        )
+        const dedupedBoot = boot.filter(
+          (m: any) => !existingKeys.has(`${m.gameId}#${m.ply}#${m.kind}#${m.centipawnLoss ?? ''}#${(m as any).bootstrapped ? 'b' : 'r'}`),
+        )
+        if (dedupedBoot.length === 0) return existing
+        const incInacc = dedupedBoot.filter((m: any) => m.kind === 'inaccuracy').length
+        const incMist = dedupedBoot.filter((m: any) => m.kind === 'mistake').length
+        const incBlun = dedupedBoot.filter((m: any) => m.kind === 'blunder').length
+        const next: AnalysisSummary = {
+          ...existing,
+          total: {
+            inaccuracies: existing.total.inaccuracies + incInacc,
+            mistakes: existing.total.mistakes + incMist,
+            blunders: existing.total.blunders + incBlun,
+          },
+          mistakesByOpening: {
+            ...existing.mistakesByOpening,
+            ...(openingFromEvent
+              ? { [openingFromEvent]: (existing.mistakesByOpening[openingFromEvent] || 0) + dedupedBoot.length }
+              : {}),
+          },
+          blundersByOpening: {
+            ...existing.blundersByOpening,
+            ...(openingFromEvent
+              ? { [openingFromEvent]: (existing.blundersByOpening[openingFromEvent] || 0) + incBlun }
+              : {}),
+          },
+          topMistakes: [...(existing.topMistakes || []), ...dedupedBoot].sort(
+            (a: any, b: any) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0),
+          ),
+        }
+        return next
+      })
+      // Small UX pulse
       setIsAnalyzing(true)
       setTimeout(() => setIsAnalyzing(false), 300)
     }
