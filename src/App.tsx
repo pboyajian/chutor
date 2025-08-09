@@ -88,7 +88,8 @@ export default function App() {
         const key = computeDatasetKey(uploadedGames as any, { onlyForUsername: detected })
         try {
           const cached = await idbGet<AnalysisSummary>(key)
-          if (cached) {
+          const freshMs = 7 * 24 * 60 * 60 * 1000
+          if (cached && Date.now() - (cached.createdAt || 0) <= freshMs) {
             if ((import.meta as any).env?.DEV) console.log(`IDB hit: ${key}`)
             setSummary(cached.summary)
             // Background validation
@@ -129,7 +130,8 @@ export default function App() {
           const key = computeDatasetKey(data as any, { onlyForUsername: detected ?? username })
           try {
             const cached = await idbGet<AnalysisSummary>(key)
-            if (cached) {
+            const freshMs = 7 * 24 * 60 * 60 * 1000
+            if (cached && Date.now() - (cached.createdAt || 0) <= freshMs) {
               if ((import.meta as any).env?.DEV) console.log(`IDB hit: ${key}`)
               setSummary(cached.summary)
               // Background validation
@@ -208,7 +210,8 @@ export default function App() {
             const key = computeDatasetKey(uploaded as any, { onlyForUsername: detected })
             try {
               const cached = await idbGet<AnalysisSummary>(key)
-              if (cached) {
+              const freshMs = 7 * 24 * 60 * 60 * 1000
+              if (cached && Date.now() - (cached.createdAt || 0) <= freshMs) {
                 if ((import.meta as any).env?.DEV) console.log(`IDB hit: ${key}`)
                 setSummary(cached.summary)
                 apiClient.analyzeGames(uploaded, { onlyForUsername: detected }).then(async (server) => {
