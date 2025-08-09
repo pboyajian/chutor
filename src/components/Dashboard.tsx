@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import analyzeGames, { type AnalysisSummary } from '../lib/analysis'
+import { apiClient } from '../lib/api'
 import type { LichessGame } from '../lib/lichess'
 import MistakeList from './MistakeList'
 import ChessboardDisplay from './ChessboardDisplay'
@@ -235,8 +236,7 @@ export default function Dashboard({
                   setIsBootstrapping(true)
                   const payloadGames = games as any[]
                   // Call backend to bootstrap only this opening
-                  const client = (await import('../lib/api')).apiClient
-                  const result = await client.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
+                  const result = await apiClient.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
                   // Update local view immediately by signaling App
                   window.dispatchEvent(new CustomEvent('chutor:bootstrapped', { detail: { opening: selectedOpening, summary: result.summary } }))
                   setBootstrappedOpening(selectedOpening)
