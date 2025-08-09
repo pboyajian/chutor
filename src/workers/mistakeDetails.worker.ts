@@ -68,6 +68,7 @@ self.onmessage = (evt: MessageEvent) => {
     bestSan?: string
     opening: string
     fen: string
+    bootstrapped?: boolean
   }> = []
 
   const counts: Record<string, number> = {}

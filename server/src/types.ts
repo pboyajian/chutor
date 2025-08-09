@@ -37,6 +37,7 @@ export interface AnalysisSummary {
     side: 'white' | 'black'
     centipawnLoss?: number
     kind: 'inaccuracy' | 'mistake' | 'blunder'
+    bootstrapped?: boolean
   }>
 }
 
