@@ -56,9 +56,15 @@ export default function MistakeList({
       workerRef.current = null
     }
 
+    // Prepare the source list once (topMistakes if present, otherwise topBlunders tagged as blunders)
+    const source: any[] = hasTopMistakes
+      ? (summary as any).topMistakes
+      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
+    const submitted = Array.isArray(source) ? source : []
+    setProgress({ processed: 0, total: submitted.length })
+
     const w = new Worker(new URL('../workers/mistakeDetails.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = w
-
     w.onmessage = (evt: MessageEvent) => {
       const { type, data } = evt.data || {}
       if (type === 'progress') {
@@ -66,7 +72,26 @@ export default function MistakeList({
         return
       }
       if (type === 'result') {
-        setPreparedItems(Array.isArray(data.items) ? data.items : [])
+        const workerItems = Array.isArray(data.items) ? data.items : []
+        if (workerItems.length === 0 && Array.isArray(submitted) && submitted.length > 0) {
+          // Fallback: synthesize minimal items so the list is not empty
+          const quick = submitted.map((m: any) => {
+            const game = (games as any[]).find((g) => String((g as any)?.id ?? '') === String(m.gameId))
+            return {
+              gameId: String(m.gameId ?? ''),
+              moveNumber: Number(m.moveNumber ?? 0),
+              centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined,
+              kind: m.kind,
+              playedSan: undefined,
+              bestSan: undefined,
+              opening: String((game as any)?.opening?.name ?? 'Unknown'),
+              fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+            }
+          })
+          setPreparedItems(quick)
+        } else {
+          setPreparedItems(workerItems)
+        }
         setRecurringPatterns(data.recurringPatterns || [])
         setIsPreparing(false)
         setProgress(null)
@@ -81,15 +106,12 @@ export default function MistakeList({
       workerRef.current = null
     }
 
-    const MAX_ITEMS = 3000
-    const source: any[] = hasTopMistakes
-      ? (summary as any).topMistakes
-      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
-    const limited = Array.isArray(source) ? source.slice(0, MAX_ITEMS) : []
-    setProgress({ processed: 0, total: limited.length })
+    if ((import.meta as any).env?.DEV) {
+      console.log('[MistakeList] sending to worker:', { items: submitted.length, hasTopMistakes, hasTopBlunders })
+    }
     const payload = {
       games,
-      mistakes: limited.map((m: any) => ({ gameId: String(m.gameId ?? ''), moveNumber: Number(m.moveNumber ?? 0), ply: Number(m.ply ?? 0), centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined, kind: m.kind })),
+      mistakes: submitted.map((m: any) => ({ gameId: String(m.gameId ?? ''), moveNumber: Number(m.moveNumber ?? 0), ply: Number(m.ply ?? 0), centipawnLoss: typeof m.centipawnLoss === 'number' ? m.centipawnLoss : undefined, kind: m.kind })),
     }
     w.postMessage(payload)
 
@@ -102,21 +124,43 @@ export default function MistakeList({
   }, [games, summary])
 
   const items = useMemo(() => {
-    const base = preparedItems.map((it) => ({
-      gameId: it.gameId,
-      moveNumber: it.moveNumber,
-      centipawnLoss: it.centipawnLoss,
+    const raw = preparedItems.map((it) => ({
+      gameId: String(it.gameId),
+      moveNumber: Number(it.moveNumber),
+      centipawnLoss: typeof it.centipawnLoss === 'number' ? it.centipawnLoss : undefined,
       kind: it.kind as 'inaccuracy' | 'mistake' | 'blunder' | undefined,
       playedSan: it.playedSan as string | undefined,
       bestSan: it.bestSan as string | undefined,
       opening: String(it.opening ?? 'Unknown'),
-      fen: it.fen as string,
+      fen: String(it.fen || ''),
       game: (games as any[]).find((g) => String((g as any)?.id ?? '') === String(it.gameId)),
       frequency: 1,
     }))
 
-    if (sortMode === 'move') return base.sort((a, b) => a.moveNumber - b.moveNumber)
-    return base.sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+    if (sortMode === 'move') return raw.sort((a, b) => a.moveNumber - b.moveNumber)
+
+    // Sort by recurrence: group by opening + moveNumber + playedSan
+    const severityRank = (k?: 'inaccuracy' | 'mistake' | 'blunder') => (k === 'blunder' ? 3 : k === 'mistake' ? 2 : k === 'inaccuracy' ? 1 : 0)
+    const groups = new Map<string, typeof raw[number]>()
+    for (const it of raw) {
+      const key = `${it.opening}||${it.moveNumber}||${it.playedSan ?? '—'}`
+      const existing = groups.get(key)
+      if (!existing) {
+        groups.set(key, { ...it, frequency: 1 })
+      } else {
+        existing.frequency += 1
+        // Keep the most severe kind and the highest centipawn loss as representative
+        if (severityRank(it.kind) > severityRank(existing.kind)) existing.kind = it.kind
+        if ((it.centipawnLoss ?? 0) > (existing.centipawnLoss ?? 0)) {
+          existing.centipawnLoss = it.centipawnLoss
+          existing.fen = it.fen
+          existing.gameId = it.gameId
+          existing.game = it.game
+        }
+      }
+    }
+    const aggregated = Array.from(groups.values())
+    return aggregated.sort((a, b) => (b.frequency - a.frequency) || (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
   }, [preparedItems, sortMode, games])
 
   const pagedItems = useMemo(() => {
