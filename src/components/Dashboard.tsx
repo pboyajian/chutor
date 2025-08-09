@@ -118,17 +118,23 @@ export default function Dashboard({
     const filteredMistakes = (summary.topMistakes || []).filter((m: any) => gameIds.has(String(m.gameId)))
     const filteredBlunders = (summary.topBlunders || []).filter((b: any) => gameIds.has(String(b.gameId)))
 
+    // Combine blunders from both sources (topMistakes may include bootstrapped blunders; topBlunders are measured)
+    const blunderKeys = new Set<string>()
+    for (const m of filteredMistakes) if (m.kind === 'blunder') blunderKeys.add(`${m.gameId}#${m.ply}`)
+    for (const b of filteredBlunders) blunderKeys.add(`${b.gameId}#${b.ply}`)
+
     const totals = {
       inaccuracies: filteredMistakes.filter((m: any) => m.kind === 'inaccuracy').length,
       mistakes: filteredMistakes.filter((m: any) => m.kind === 'mistake').length,
-      blunders: filteredMistakes.filter((m: any) => m.kind === 'blunder').length,
+      blunders: blunderKeys.size,
     }
-    const mistakesByOpening: Record<string, number> = {
-      [selectedOpening]: filteredMistakes.length,
-    }
-    const blundersByOpening: Record<string, number> = {
-      [selectedOpening]: filteredBlunders.length,
-    }
+    // Opening aggregates: count unique mistakes (all kinds) and measured blunders for this opening
+    const uniqueMistakeKeys = new Set<string>()
+    for (const m of filteredMistakes) uniqueMistakeKeys.add(`${m.gameId}#${m.ply}`)
+    const mistakesByOpening: Record<string, number> = { [selectedOpening]: uniqueMistakeKeys.size }
+    const uniqueMeasuredBlunderKeys = new Set<string>()
+    for (const b of filteredBlunders) uniqueMeasuredBlunderKeys.add(`${b.gameId}#${b.ply}`)
+    const blundersByOpening: Record<string, number> = { [selectedOpening]: uniqueMeasuredBlunderKeys.size }
     return {
       total: totals,
       mistakesByOpening,

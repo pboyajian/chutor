@@ -56,10 +56,25 @@ export default function MistakeList({
       workerRef.current = null
     }
 
-    // Prepare the source list once (topMistakes if present, otherwise topBlunders tagged as blunders)
-    const source: any[] = hasTopMistakes
-      ? (summary as any).topMistakes
-      : (summary as any).topBlunders.map((b: any) => ({ ...b, kind: 'blunder' as const }))
+    // Prepare the source list once: merge topMistakes (all kinds) with measured topBlunders
+    // Deduplicate by (gameId, ply), preferring the topMistakes entry if both present
+    const merged: any[] = []
+    const seen = new Set<string>()
+    const tm: any[] = Array.isArray((summary as any).topMistakes) ? (summary as any).topMistakes : []
+    for (const m of tm) {
+      const key = `${String(m.gameId)}#${Number(m.ply)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(m)
+    }
+    const tb: any[] = Array.isArray((summary as any).topBlunders) ? (summary as any).topBlunders : []
+    for (const b of tb) {
+      const key = `${String(b.gameId)}#${Number(b.ply)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push({ ...b, kind: 'blunder' as const })
+    }
+    const source: any[] = merged
     const submitted = Array.isArray(source) ? source : []
     setProgress({ processed: 0, total: submitted.length })
 
