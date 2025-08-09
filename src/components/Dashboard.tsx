@@ -37,11 +37,18 @@ export default function Dashboard({
   const [copied, setCopied] = useState<boolean>(false)
   const [selectedMeta, setSelectedMeta] = useState<{ gameId: string; moveNumber: number } | null>(null)
   const [selectedOpening, setSelectedOpening] = useState<string | null>(null)
+  const [isBootstrapping, setIsBootstrapping] = useState(false)
+  const [bootstrappedOpening, setBootstrappedOpening] = useState<string | null>(null)
   
   // Reset selected opening when games change
   useEffect(() => {
     setSelectedOpening(null)
   }, [games])
+  // Reset bootstrap state when opening changes
+  useEffect(() => {
+    setIsBootstrapping(false)
+    setBootstrappedOpening(null)
+  }, [selectedOpening])
   const orientation: 'white' | 'black' = useMemo(() => {
     const parts = selectedFen.split(' ')
     return parts[1] === 'b' ? 'black' : 'white'
@@ -225,20 +232,29 @@ export default function Dashboard({
               type="button"
               onClick={async () => {
                 try {
+                  setIsBootstrapping(true)
                   const payloadGames = games as any[]
                   // Call backend to bootstrap only this opening
                   const client = (await import('../lib/api')).apiClient
                   const result = await client.analyzeGames(payloadGames as any, { onlyForUsername: filterUsername, bootstrapOpening: selectedOpening || undefined })
                   // Update local view immediately by signaling App
                   window.dispatchEvent(new CustomEvent('chutor:bootstrapped', { detail: { opening: selectedOpening, summary: result.summary } }))
+                  setBootstrappedOpening(selectedOpening)
+                  setIsBootstrapping(false)
                 } catch (e) {
                   console.error('Bootstrap failed', e)
+                  setIsBootstrapping(false)
                 }
               }}
-              className="ml-2 text-xs px-2 py-1 rounded border border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700"
+              disabled={isBootstrapping}
+              className={`ml-2 text-xs px-2 py-1 rounded border ${isBootstrapping ? 'opacity-60 cursor-wait border-slate-700 text-gray-400 bg-slate-800/40' : bootstrappedOpening === selectedOpening ? 'border-green-700 text-green-300 bg-green-900/20' : 'border-slate-700 text-gray-200 bg-slate-800/60 hover:bg-slate-700'}`}
               title={unevaluatedCountForSelected > 0 ? `We found ${unevaluatedCountForSelected} unevaluated game(s) in this opening. Click to bootstrap from known positions.` : 'Bootstrap this opening from known positions'}
             >
-              {`Bootstrap this opening${unevaluatedCountForSelected > 0 ? ` (${unevaluatedCountForSelected})` : ''}`}
+              {isBootstrapping
+                ? 'Bootstrapping…'
+                : bootstrappedOpening === selectedOpening
+                ? 'Bootstrapped!'
+                : `Bootstrap this opening${unevaluatedCountForSelected > 0 ? ` (${unevaluatedCountForSelected})` : ''}`}
             </button>
           )}
         </div>
