@@ -19,6 +19,11 @@ export interface AnalysisResponse {
   detectedUsername?: string
 }
 
+export interface ChesscomGamesResponse {
+  pgn?: string
+  games?: LichessGame[]
+}
+
 export class ApiClient {
   private baseUrl: string
 
@@ -43,7 +48,19 @@ export class ApiClient {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Network error' }))
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+      throw new Error(errorData.details || errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    return response.json()
+  }
+
+  async fetchChesscomGames(username: string): Promise<ChesscomGamesResponse> {
+    const url = new URL(`${this.baseUrl}/api/games/chess.com/${encodeURIComponent(username)}`)
+    const response = await fetch(url.toString())
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Network error' }))
+      throw new Error(errorData.details || errorData.error || `HTTP ${response.status}: ${response.statusText}`)
     }
 
     return response.json()

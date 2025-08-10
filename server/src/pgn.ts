@@ -1,25 +1,26 @@
-import { Chess } from 'chess.js'
-import type { LichessGame } from './lichess'
 
-export async function pgnFileToGames(file: File, maxGames = 25000): Promise<LichessGame[]> {
-  const text = await file.text()
-  const games: LichessGame[] = []
-  let currentGame = ''
-  for (const line of text.split('\n')) {
-    if (line.startsWith('[Event ') && currentGame) {
-      games.push(parsePgn(currentGame))
-      if (games.length >= maxGames) break
-      currentGame = ''
+import { Chess } from 'chess.js'
+
+export function pgnToGames(pgn: string, maxGames = 25000): any[] {
+  if (!pgn || !pgn.trim()) {
+    return []
+  }
+  // Split games by looking for the start of a new [Event] tag
+  // This is more reliable than trying to split on blank lines
+  const pgnGames = pgn.trim().split(/(?=\[Event\s)/g).filter(game => game.trim())
+  const games: any[] = []
+
+  for (const gamePgn of pgnGames) {
+    if (games.length >= maxGames) break
+    if (gamePgn.trim()) {
+      games.push(parsePgn(gamePgn.trim()))
     }
-    currentGame += line + '\n'
   }
-  if (currentGame && games.length < maxGames) {
-    games.push(parsePgn(currentGame))
-  }
+
   return games
 }
 
-function parsePgn(pgn: string): LichessGame {
+function parsePgn(pgn: string): any {
   const chess = new Chess()
   try {
     chess.loadPgn(pgn)
@@ -80,5 +81,3 @@ function parsePgn(pgn: string): LichessGame {
     winner: result === '1-0' ? 'white' : result === '0-1' ? 'black' : undefined,
   }
 }
-
-

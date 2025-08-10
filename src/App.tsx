@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Chess } from 'chess.js'
-import UsernameForm from './components/UsernameForm'
+import UsernameForm, { Platform } from './components/UsernameForm'
 import Dashboard from './components/Dashboard'
 import DashboardSkeleton from './components/DashboardSkeleton'
 import Spinner from './components/Spinner'
@@ -70,7 +70,7 @@ export default function App() {
     return best
   }
 
-  const handleAnalyze = async (username?: string) => {
+  const handleAnalyze = async (platform: Platform, username?: string) => {
     setIsLoading(true)
     setError(null)
     setGames(null)
@@ -118,6 +118,43 @@ export default function App() {
           timestamp: Date.now(),
         }])
       } else {
+        if (platform === 'chess.com') {
+          try {
+            const result = await apiClient.fetchChesscomGames(username || '')
+            const games = result.games || []
+            
+            if (games.length === 0) {
+              setError('No games found for this user.')
+              setIsLoading(false)
+              return
+            }
+
+            setGames(games)
+            setIsAnalyzing(true)
+            const detected = deriveUsernameFromGames(games)
+            setSelectedUsername(detected ?? (username ?? null))
+
+            const key = computeDatasetKey(games as any, { onlyForUsername: detected ?? username })
+            const cached = await idbGet<AnalysisSummary>(key)
+            const freshMs = 7 * 24 * 60 * 60 * 1000
+            if (cached && Date.now() - (cached.createdAt || 0) <= freshMs) {
+              setSummary(cached.summary)
+            } else {
+              const analysisResult = await apiClient.analyzeGames(games, { onlyForUsername: detected ?? username })
+              setSummary(analysisResult.summary)
+              const v = (analysisResult as any)?.meta?.version as number | undefined
+              await idbSet({ key, summary: analysisResult.summary, createdAt: Date.now(), version: v || 1 })
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Unexpected error fetching Chess.com games'
+            setError(msg)
+          } finally {
+            setIsLoading(false)
+            setIsAnalyzing(false)
+          }
+          return
+        }
+
         const abort = new AbortController()
         try {
           const data = await fetchLichessGames(username || '', { max: 2000, signal: abort.signal })
@@ -335,7 +372,7 @@ export default function App() {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <section className="text-center mb-8">
           <h2 className="text-xl md:text-2xl font-medium text-gray-100 mb-4">Personalized Chess Improvement</h2>
-          <p className="text-gray-400 mb-6">Analyze your Lichess games to uncover recurring mistakes and patterns.</p>
+          <p className="text-gray-400 mb-6">Analyze your Lichess or Chess.com games to uncover recurring mistakes and patterns.</p>
           <UsernameForm onAnalyze={handleAnalyze} isLoading={isLoading} />
         </section>
 

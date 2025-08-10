@@ -4,6 +4,8 @@ const helmet = require('helmet')
 const compression = require('compression')
 const { Worker } = require('worker_threads')
 const os = require('os')
+import { getMonthlyArchives, fetchPgnFromArchives, ChesscomError } from './chesscom'
+import { pgnToGames } from './pgn'
 
 const app = express()
 const { globalSummaryCache } = require('./cache')
@@ -256,6 +258,40 @@ app.get('/api/cache/info', (req: any, res: any) => {
     res.json(m)
   } catch (e) {
     res.status(500).json({ error: 'cache info failed' })
+  }
+})
+
+app.get('/api/games/chess.com/:username', async (req: any, res: any) => {
+  try {
+    const username = req.params.username
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' })
+    }
+    const archives = await getMonthlyArchives(username)
+    if (archives.length === 0) {
+      return res.json({ games: [] })
+    }
+    const pgn = await fetchPgnFromArchives(archives)
+    const games = pgnToGames(pgn)
+    return res.json({ games })
+  } catch (error: unknown) {
+    if (error instanceof ChesscomError) {
+      return res.status(error.status || 500).json({ error: error.message, details: error.message })
+    }
+    console.error('💥 Unhandled error in chess.com endpoint:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
+    return res.status(500).json({ error: errorMessage })
+  }
+})
+
+// Test Chess.com API connectivity
+app.get('/api/test/chess.com', async (req: any, res: any) => {
+  try {
+    const archives = await getMonthlyArchives('hikaru') // Test with a known Chess.com user
+    return res.json({ success: true, archiveCount: archives.length, message: 'Chess.com API is accessible' })
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return res.status(500).json({ success: false, error: errorMessage })
   }
 })
 
