@@ -1,6 +1,10 @@
 ## Chutor
 
 Personalized chess improvement tool for Lichess game data. Chutor fetches or imports your games, analyzes mistakes, and presents actionable patterns with an interactive board and charts.
+<img width="1080" height="883" alt="image" src="https://github.com/user-attachments/assets/438fd1aa-c06e-4824-a4e1-5d589ab4d6f9" />
+<img width="1144" height="934" alt="image" src="https://github.com/user-attachments/assets/4c60c1df-a9a5-4fd3-b81f-34b05654bb17" />
+<img width="1912" height="352" alt="image" src="https://github.com/user-attachments/assets/b6f2830d-a5b6-4e91-8202-0c8e2ed87c4f" />
+
 
 ### Highlights
 
